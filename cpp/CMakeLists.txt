@@ -29,6 +29,7 @@ include_directories(${CMAKE_SOURCE_DIR}/include)
 # ---- trading_engine (library) ----
 add_library(trading_engine
     src/engine.cpp
+    src/rpc.cpp
 )
 target_link_libraries(trading_engine
     PRIVATE spdlog::spdlog nlohmann_json::nlohmann_json

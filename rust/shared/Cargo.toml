@@ -8,7 +8,8 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1.0", features = ["v4", "serde"] }
-thiserror = "1.0"
-anyhow = "1.0"
-rust_decimal = { version = "1.0", features = ["serde"] }
-rust_decimal_macros = "1.0"
+rust_decimal = { version = "1.32", features = ["serde"] }
+redis = { version = "0.23", features = ["tokio-comp", "connection-manager"] }
+tokio = { version = "1.0", features = ["full"] }
+async-trait = "0.1"
+tracing = "0.1"

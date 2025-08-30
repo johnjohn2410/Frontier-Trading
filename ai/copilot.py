@@ -1,474 +1,569 @@
 import asyncio
+import aiohttp
 import json
 import logging
 from datetime import datetime, timedelta
-from typing import List, Dict, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, asdict
+from decimal import Decimal
+import re
 from enum import Enum
-import aiohttp
-import openai
-from pydantic import BaseModel, Field
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# ============================================================================
+# ENHANCED COPILOT SUGGESTION MODEL
+# ============================================================================
 
-class AlertType(str, Enum):
-    PRICE_ABOVE = "price_above"
-    PRICE_BELOW = "price_below"
-    PERCENTAGE_GAIN = "percentage_gain"
-    PERCENTAGE_LOSS = "percentage_loss"
-    VOLUME_SPIKE = "volume_spike"
-    NEWS_MENTION = "news_mention"
-    EARNINGS_ANNOUNCEMENT = "earnings_announcement"
-    TECHNICAL_BREAKOUT = "technical_breakout"
-
-class NotificationChannel(str, Enum):
-    IN_APP = "in_app"
-    EMAIL = "email"
-    PUSH = "push"
-    SMS = "sms"
-    WEBSOCKET = "websocket"
+class CopilotActionType(Enum):
+    BUY = "buy"
+    SELL = "sell"
+    HOLD = "hold"
+    WATCH = "watch"
+    ALERT = "alert"
 
 @dataclass
-class AlertRequest:
-    symbol: str
-    alert_type: AlertType
-    price_target: Optional[float] = None
-    percentage_change: Optional[float] = None
-    notification_channels: List[NotificationChannel] = None
-    keywords: List[str] = None
-    sources: List[str] = None
-    confidence: float = 0.8
-    reasoning: str = ""
+class RiskImpact:
+    estimated_drawdown: float
+    bp_usage: float  # Percentage of buying power
+    max_loss: float
+    risk_reward_ratio: Optional[float] = None
 
 @dataclass
-class NewsAlertRequest:
-    symbol: str
-    keywords: List[str]
-    sources: List[str]
-    notification_channels: List[NotificationChannel]
-    confidence: float = 0.8
-    reasoning: str = ""
+class CopilotFeatures:
+    volume_z_score: Optional[float] = None
+    rsi: Optional[float] = None
+    news_sentiment: Optional[float] = None
+    technical_signals: List[str] = None
+    fundamental_metrics: Dict[str, Any] = None
+    
+    def __post_init__(self):
+        if self.technical_signals is None:
+            self.technical_signals = []
+        if self.fundamental_metrics is None:
+            self.fundamental_metrics = {}
 
 @dataclass
-class AlertInsight:
+class WhatIfAnalysis:
+    quantity: float
+    price: float
+    estimated_cost: float
+    estimated_fees: float
+    potential_pnl: float
+    risk_metrics: Dict[str, Any] = None
+    
+    def __post_init__(self):
+        if self.risk_metrics is None:
+            self.risk_metrics = {}
+
+@dataclass
+class GuardrailCheck:
+    max_position_ok: bool
+    daily_loss_ok: bool
+    market_hours_ok: bool
+    pattern_day_trader_ok: bool
+    risk_limits_ok: bool
+    violations: List[str] = None
+    
+    def __post_init__(self):
+        if self.violations is None:
+            self.violations = []
+
+@dataclass
+class ComplianceInfo:
+    disclaimer: str
+    requires_confirmation: bool
+    not_financial_advice: bool
+    risk_disclosure: str
+
+@dataclass
+class CopilotSuggestion:
+    suggestion_id: str
+    user_id: str
     symbol: str
-    alert_type: AlertType
-    confidence: float
-    reasoning: str
-    suggested_action: str
-    market_context: str
-    risk_level: str
-    sources: List[str]
+    suggestion: str
+    action_type: CopilotActionType
+    confidence: float  # 0.0 to 1.0
+    risk_impact: RiskImpact
+    features: CopilotFeatures
+    what_if: WhatIfAnalysis
+    guardrails: GuardrailCheck
+    compliance: ComplianceInfo
+    timestamp: datetime = None
+    
+    def __post_init__(self):
+        if self.timestamp is None:
+            self.timestamp = datetime.utcnow()
 
-class AlertManager:
-    def __init__(self, api_base_url: str = "http://localhost:8000"):
-        self.api_base_url = api_base_url
-        self.session = None
-
-    async def __aenter__(self):
-        self.session = aiohttp.ClientSession()
-        return self
-
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        if self.session:
-            await self.session.close()
-
-    async def create_price_alert(self, user_id: str, alert_request: AlertRequest) -> Dict[str, Any]:
-        """Create a price alert for a user"""
-        url = f"{self.api_base_url}/api/alerts/price"
-        payload = {
-            "user_id": user_id,
-            "symbol": alert_request.symbol,
-            "alert_type": alert_request.alert_type.value,
-            "price_target": alert_request.price_target,
-            "percentage_change": alert_request.percentage_change,
-            "notification_channels": [ch.value for ch in alert_request.notification_channels or []]
-        }
-        
-        async with self.session.post(url, json=payload) as response:
-            return await response.json()
-
-    async def create_news_alert(self, user_id: str, news_request: NewsAlertRequest) -> Dict[str, Any]:
-        """Create a news alert for a user"""
-        url = f"{self.api_base_url}/api/alerts/news"
-        payload = {
-            "user_id": user_id,
-            "symbol": news_request.symbol,
-            "keywords": news_request.keywords,
-            "sources": news_request.sources,
-            "notification_channels": [ch.value for ch in news_request.notification_channels]
-        }
-        
-        async with self.session.post(url, json=payload) as response:
-            return await response.json()
-
-    async def get_user_alerts(self, user_id: str) -> List[Dict[str, Any]]:
-        """Get all alerts for a user"""
-        url = f"{self.api_base_url}/api/alerts/user/{user_id}"
-        async with self.session.get(url) as response:
-            return await response.json()
-
-    async def delete_alert(self, alert_id: str) -> Dict[str, Any]:
-        """Delete an alert"""
-        url = f"{self.api_base_url}/api/alerts/{alert_id}"
-        async with self.session.delete(url) as response:
-            return await response.json()
+# ============================================================================
+# ENHANCED ALERT ANALYZER
+# ============================================================================
 
 class AlertAnalyzer:
-    def __init__(self, openai_api_key: str):
-        self.client = openai.AsyncOpenAI(api_key=openai_api_key)
+    def __init__(self, openai_client):
+        self.openai_client = openai_client
+        self.logger = logging.getLogger(__name__)
+    
+    async def analyze_stock_for_alerts(self, symbol: str, user_id: str, 
+                                     market_data: Dict[str, Any], 
+                                     news_data: List[Dict[str, Any]],
+                                     account_data: Dict[str, Any]) -> CopilotSuggestion:
+        """Analyze stock and generate intelligent alert suggestions."""
         
-    async def analyze_stock_for_alerts(self, symbol: str, current_price: float, 
-                                     market_data: Dict[str, Any], user_interests: List[str]) -> List[AlertInsight]:
-        """Analyze a stock and suggest relevant alerts based on current conditions and user interests"""
+        # Build context for AI analysis
+        context = self._build_analysis_context(symbol, market_data, news_data, account_data)
+        
+        # Get AI analysis
+        analysis = await self._get_ai_analysis(context)
+        
+        # Parse AI response and create structured suggestion
+        suggestion = self._parse_ai_suggestion(analysis, symbol, user_id, market_data, account_data)
+        
+        return suggestion
+    
+    def _build_analysis_context(self, symbol: str, market_data: Dict[str, Any], 
+                               news_data: List[Dict[str, Any]], 
+                               account_data: Dict[str, Any]) -> str:
+        """Build comprehensive context for AI analysis."""
+        
+        context_parts = [
+            f"Stock: {symbol}",
+            f"Current Price: ${market_data.get('price', 0):.2f}",
+            f"Volume: {market_data.get('volume', 0):,}",
+            f"24h Change: {market_data.get('change_percent', 0):.2f}%",
+        ]
+        
+        # Add technical indicators if available
+        if 'rsi' in market_data:
+            context_parts.append(f"RSI: {market_data['rsi']:.1f}")
+        if 'volume_avg' in market_data:
+            volume_ratio = market_data.get('volume', 0) / market_data['volume_avg']
+            context_parts.append(f"Volume Ratio: {volume_ratio:.2f}x average")
+        
+        # Add news sentiment
+        if news_data:
+            avg_sentiment = sum(n.get('sentiment', 0) for n in news_data) / len(news_data)
+            context_parts.append(f"News Sentiment: {avg_sentiment:.2f} (-1 to 1)")
+        
+        # Add account context
+        context_parts.extend([
+            f"Available Cash: ${account_data.get('cash', 0):,.2f}",
+            f"Current Equity: ${account_data.get('equity', 0):,.2f}",
+            f"Buying Power: ${account_data.get('buying_power', 0):,.2f}",
+        ])
+        
+        return "\n".join(context_parts)
+    
+    async def _get_ai_analysis(self, context: str) -> Dict[str, Any]:
+        """Get AI analysis using OpenAI GPT-4."""
         
         prompt = f"""
-        Analyze the stock {symbol} (current price: ${current_price:.2f}) and suggest intelligent alerts for a user interested in: {', '.join(user_interests)}.
-        
-        Market Data:
-        - Current Price: ${current_price:.2f}
-        - 52-week high: ${market_data.get('high_52w', 0):.2f}
-        - 52-week low: ${market_data.get('low_52w', 0):.2f}
-        - Volume: {market_data.get('volume', 0):,}
-        - Average Volume: {market_data.get('avg_volume', 0):,}
-        - P/E Ratio: {market_data.get('pe_ratio', 0):.2f}
-        - Market Cap: ${market_data.get('market_cap', 0):,.0f}
-        
-        Consider:
-        1. Technical levels (support/resistance)
-        2. Volume patterns
-        3. Earnings announcements
-        4. News sentiment
-        5. User's specific interests
-        
-        Suggest 2-4 relevant alerts with:
-        - Alert type (price_above, price_below, percentage_gain, percentage_loss, volume_spike, news_mention, earnings_announcement, technical_breakout)
-        - Target values
-        - Confidence level (0.0-1.0)
-        - Reasoning
-        - Suggested action
-        - Risk level (low, medium, high)
-        
-        Return as JSON array of alert suggestions.
-        """
+You are an AI trading assistant analyzing a stock for potential trading opportunities. 
+Your goal is to provide clear, actionable suggestions with confidence levels and risk assessments.
+
+Context:
+{context}
+
+Please analyze this stock and provide a structured response in JSON format with the following fields:
+
+{{
+    "action_type": "buy|sell|hold|watch|alert",
+    "confidence": 0.0-1.0,
+    "reasoning": "Clear explanation of why this action is suggested",
+    "risk_level": "low|medium|high",
+    "key_factors": [
+        "Factor 1: description",
+        "Factor 2: description"
+    ],
+    "technical_signals": [
+        "Signal 1",
+        "Signal 2"
+    ],
+    "suggested_quantity": 0,
+    "suggested_price": 0.0,
+    "estimated_cost": 0.0,
+    "potential_upside": "percentage or dollar amount",
+    "potential_downside": "percentage or dollar amount",
+    "risk_reward_ratio": 0.0,
+    "time_horizon": "short|medium|long",
+    "stop_loss_suggestion": 0.0,
+    "take_profit_suggestion": 0.0
+}}
+
+Focus on:
+1. Clear, explainable reasoning
+2. Conservative confidence levels
+3. Risk-aware suggestions
+4. Specific, actionable recommendations
+5. Compliance with trading best practices
+
+Remember: This is for educational purposes only. Always suggest appropriate position sizing and risk management.
+"""
         
         try:
-            response = await self.client.chat.completions.create(
+            response = await self.openai_client.chat.completions.create(
                 model="gpt-4",
-                messages=[{"role": "user", "content": prompt}],
+                messages=[
+                    {"role": "system", "content": "You are a professional trading assistant focused on risk management and clear explanations."},
+                    {"role": "user", "content": prompt}
+                ],
                 temperature=0.3,
                 max_tokens=1000
             )
             
             content = response.choices[0].message.content
-            alert_suggestions = json.loads(content)
-            
-            insights = []
-            for suggestion in alert_suggestions:
-                insight = AlertInsight(
-                    symbol=symbol,
-                    alert_type=AlertType(suggestion['alert_type']),
-                    confidence=suggestion['confidence'],
-                    reasoning=suggestion['reasoning'],
-                    suggested_action=suggestion['suggested_action'],
-                    market_context=suggestion.get('market_context', ''),
-                    risk_level=suggestion['risk_level'],
-                    sources=suggestion.get('sources', [])
-                )
-                insights.append(insight)
-            
-            return insights
+            return json.loads(content)
             
         except Exception as e:
-            logger.error(f"Error analyzing stock {symbol}: {e}")
-            return []
+            self.logger.error(f"AI analysis failed: {e}")
+            return self._get_fallback_analysis()
+    
+    def _get_fallback_analysis(self) -> Dict[str, Any]:
+        """Fallback analysis when AI fails."""
+        return {
+            "action_type": "watch",
+            "confidence": 0.3,
+            "reasoning": "Insufficient data for confident recommendation",
+            "risk_level": "medium",
+            "key_factors": ["Limited market data available"],
+            "technical_signals": [],
+            "suggested_quantity": 0,
+            "suggested_price": 0.0,
+            "estimated_cost": 0.0,
+            "potential_upside": "Unknown",
+            "potential_downside": "Unknown",
+            "risk_reward_ratio": 1.0,
+            "time_horizon": "short",
+            "stop_loss_suggestion": 0.0,
+            "take_profit_suggestion": 0.0
+        }
+    
+    def _parse_ai_suggestion(self, analysis: Dict[str, Any], symbol: str, user_id: str,
+                           market_data: Dict[str, Any], account_data: Dict[str, Any]) -> CopilotSuggestion:
+        """Parse AI analysis into structured CopilotSuggestion."""
+        
+        import uuid
+        
+        # Extract values with defaults
+        action_type = CopilotActionType(analysis.get("action_type", "watch"))
+        confidence = float(analysis.get("confidence", 0.3))
+        suggested_quantity = float(analysis.get("suggested_quantity", 0))
+        suggested_price = float(analysis.get("suggested_price", market_data.get("price", 0)))
+        
+        # Calculate risk impact
+        estimated_cost = suggested_quantity * suggested_price
+        bp_usage = (estimated_cost / account_data.get("buying_power", 1)) * 100
+        
+        risk_impact = RiskImpact(
+            estimated_drawdown=float(analysis.get("potential_downside", 0)),
+            bp_usage=min(bp_usage, 100.0),
+            max_loss=estimated_cost * (float(analysis.get("potential_downside", 0)) / 100),
+            risk_reward_ratio=float(analysis.get("risk_reward_ratio", 1.0))
+        )
+        
+        # Build features
+        features = CopilotFeatures(
+            volume_z_score=market_data.get("volume_z_score"),
+            rsi=market_data.get("rsi"),
+            news_sentiment=market_data.get("news_sentiment"),
+            technical_signals=analysis.get("technical_signals", []),
+            fundamental_metrics=market_data.get("fundamental_metrics", {})
+        )
+        
+        # Calculate what-if analysis
+        what_if = WhatIfAnalysis(
+            quantity=suggested_quantity,
+            price=suggested_price,
+            estimated_cost=estimated_cost,
+            estimated_fees=estimated_cost * 0.005,  # 0.5% estimated fees
+            potential_pnl=estimated_cost * (float(analysis.get("potential_upside", 0)) / 100),
+            risk_metrics={
+                "stop_loss": float(analysis.get("stop_loss_suggestion", 0)),
+                "take_profit": float(analysis.get("take_profit_suggestion", 0)),
+                "time_horizon": analysis.get("time_horizon", "short")
+            }
+        )
+        
+        # Check guardrails
+        guardrails = self._check_guardrails(account_data, estimated_cost, symbol)
+        
+        # Compliance info
+        compliance = ComplianceInfo(
+            disclaimer="This analysis is for educational purposes only",
+            requires_confirmation=True,
+            not_financial_advice=True,
+            risk_disclosure="Trading involves risk of loss. Past performance does not guarantee future results."
+        )
+        
+        return CopilotSuggestion(
+            suggestion_id=str(uuid.uuid4()),
+            user_id=user_id,
+            symbol=symbol,
+            suggestion=analysis.get("reasoning", "No specific recommendation"),
+            action_type=action_type,
+            confidence=confidence,
+            risk_impact=risk_impact,
+            features=features,
+            what_if=what_if,
+            guardrails=guardrails,
+            compliance=compliance
+        )
+    
+    def _check_guardrails(self, account_data: Dict[str, Any], estimated_cost: float, symbol: str) -> GuardrailCheck:
+        """Check if the suggested trade meets risk guardrails."""
+        
+        violations = []
+        
+        # Check buying power
+        buying_power = account_data.get("buying_power", 0)
+        if estimated_cost > buying_power:
+            violations.append("Insufficient buying power")
+        
+        # Check position limits (example: max 5% of portfolio per position)
+        equity = account_data.get("equity", 1)
+        position_limit = equity * 0.05
+        if estimated_cost > position_limit:
+            violations.append("Position size exceeds 5% portfolio limit")
+        
+        # Check daily loss limits
+        daily_pnl = account_data.get("daily_pnl", 0)
+        daily_limit = account_data.get("daily_loss_limit", -1000)
+        if daily_pnl < daily_limit:
+            violations.append("Daily loss limit reached")
+        
+        # Check market hours (simplified)
+        now = datetime.now()
+        market_hours_ok = 9 <= now.hour < 16  # Simplified market hours
+        
+        return GuardrailCheck(
+            max_position_ok=len(violations) == 0,
+            daily_loss_ok=daily_pnl >= daily_limit,
+            market_hours_ok=market_hours_ok,
+            pattern_day_trader_ok=True,  # Would check PDT status
+            risk_limits_ok=len(violations) == 0,
+            violations=violations
+        )
 
-    async def suggest_news_alerts(self, symbol: str, user_interests: List[str], 
-                                recent_news: List[Dict[str, Any]]) -> List[NewsAlertRequest]:
-        """Suggest news alert configurations based on user interests and recent news patterns"""
-        
-        prompt = f"""
-        Based on the user's interests in {', '.join(user_interests)} and recent news about {symbol}, 
-        suggest intelligent news alert configurations.
-        
-        Recent News Patterns:
-        {json.dumps(recent_news[:5], indent=2)}
-        
-        Suggest 2-3 news alert configurations with:
-        - Relevant keywords
-        - Preferred news sources
-        - Reasoning for the configuration
-        
-        Return as JSON array of news alert suggestions.
-        """
-        
-        try:
-            response = await self.client.chat.completions.create(
-                model="gpt-4",
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.3,
-                max_tokens=800
-            )
-            
-            content = response.choices[0].message.content
-            suggestions = json.loads(content)
-            
-            news_requests = []
-            for suggestion in suggestions:
-                request = NewsAlertRequest(
-                    symbol=symbol,
-                    keywords=suggestion['keywords'],
-                    sources=suggestion['sources'],
-                    notification_channels=[NotificationChannel.IN_APP, NotificationChannel.PUSH],
-                    confidence=suggestion.get('confidence', 0.8),
-                    reasoning=suggestion['reasoning']
-                )
-                news_requests.append(request)
-            
-            return news_requests
-            
-        except Exception as e:
-            logger.error(f"Error suggesting news alerts for {symbol}: {e}")
-            return []
+# ============================================================================
+# ENHANCED COPILOT ALERT SERVICE
+# ============================================================================
 
 class CopilotAlertService:
-    def __init__(self, openai_api_key: str, api_base_url: str = "http://localhost:8000"):
-        self.analyzer = AlertAnalyzer(openai_api_key)
-        self.api_base_url = api_base_url
-
-    async def setup_intelligent_alerts(self, user_id: str, symbols: List[str], 
-                                     user_interests: List[str], market_data: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
-        """Set up intelligent alerts for multiple symbols based on user interests and market conditions"""
+    def __init__(self, alert_manager: 'AlertManager', analyzer: AlertAnalyzer):
+        self.alert_manager = alert_manager
+        self.analyzer = analyzer
+        self.logger = logging.getLogger(__name__)
+    
+    async def setup_intelligent_alerts(self, user_id: str, symbol: str, 
+                                     market_data: Dict[str, Any],
+                                     news_data: List[Dict[str, Any]],
+                                     account_data: Dict[str, Any]) -> CopilotSuggestion:
+        """Set up intelligent alerts based on AI analysis."""
         
-        results = {
-            "created_alerts": [],
-            "suggestions": [],
-            "errors": []
+        # Get AI suggestion
+        suggestion = await self.analyzer.analyze_stock_for_alerts(
+            symbol, user_id, market_data, news_data, account_data
+        )
+        
+        # Create alerts based on suggestion
+        await self._create_alerts_from_suggestion(suggestion)
+        
+        return suggestion
+    
+    async def _create_alerts_from_suggestion(self, suggestion: CopilotSuggestion):
+        """Create specific alerts based on AI suggestion."""
+        
+        if suggestion.action_type == CopilotActionType.ALERT:
+            # Create price alerts
+            if suggestion.what_if.risk_metrics.get("stop_loss"):
+                await self.alert_manager.create_price_alert(
+                    user_id=suggestion.user_id,
+                    symbol=suggestion.symbol,
+                    alert_type="stop_loss",
+                    trigger_price=suggestion.what_if.risk_metrics["stop_loss"],
+                    message=f"Stop loss triggered for {suggestion.symbol}"
+                )
+            
+            if suggestion.what_if.risk_metrics.get("take_profit"):
+                await self.alert_manager.create_price_alert(
+                    user_id=suggestion.user_id,
+                    symbol=suggestion.symbol,
+                    alert_type="take_profit",
+                    trigger_price=suggestion.what_if.risk_metrics["take_profit"],
+                    message=f"Take profit target reached for {suggestion.symbol}"
+                )
+        
+        # Create news alerts for the symbol
+        await self.alert_manager.create_news_alert(
+            user_id=suggestion.user_id,
+            symbol=suggestion.symbol,
+            keywords=[suggestion.symbol, "earnings", "news", "announcement"],
+            message=f"News alert for {suggestion.symbol}"
+        )
+
+# ============================================================================
+# ENHANCED ALERT MANAGER
+# ============================================================================
+
+class AlertManager:
+    def __init__(self, base_url: str = "http://localhost:8002"):
+        self.base_url = base_url
+        self.session = None
+        self.logger = logging.getLogger(__name__)
+    
+    async def __aenter__(self):
+        self.session = aiohttp.ClientSession()
+        return self
+    
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        if self.session:
+            await self.session.close()
+    
+    async def create_price_alert(self, user_id: str, symbol: str, alert_type: str,
+                               trigger_price: float, message: str) -> Dict[str, Any]:
+        """Create a price-based alert."""
+        
+        payload = {
+            "user_id": user_id,
+            "symbol": symbol,
+            "alert_type": alert_type,
+            "trigger_price": trigger_price,
+            "message": message,
+            "active": True
         }
         
-        async with AlertManager(self.api_base_url) as alert_manager:
-            for symbol in symbols:
-                try:
-                    if symbol not in market_data:
-                        results["errors"].append(f"No market data for {symbol}")
-                        continue
-                    
-                    current_price = market_data[symbol].get('price', 0)
-                    if current_price == 0:
-                        results["errors"].append(f"Invalid price for {symbol}")
-                        continue
-                    
-                    # Analyze stock for alert suggestions
-                    insights = await self.analyzer.analyze_stock_for_alerts(
-                        symbol, current_price, market_data[symbol], user_interests
-                    )
-                    
-                    # Create alerts for high-confidence insights
-                    for insight in insights:
-                        if insight.confidence >= 0.7:
-                            try:
-                                alert_request = AlertRequest(
-                                    symbol=insight.symbol,
-                                    alert_type=insight.alert_type,
-                                    price_target=self._get_price_target(insight, current_price),
-                                    percentage_change=self._get_percentage_change(insight),
-                                    notification_channels=[NotificationChannel.IN_APP, NotificationChannel.PUSH],
-                                    confidence=insight.confidence,
-                                    reasoning=insight.reasoning
-                                )
-                                
-                                result = await alert_manager.create_price_alert(user_id, alert_request)
-                                if result.get('success'):
-                                    results["created_alerts"].append({
-                                        "symbol": symbol,
-                                        "alert_type": insight.alert_type.value,
-                                        "confidence": insight.confidence,
-                                        "reasoning": insight.reasoning
-                                    })
-                                else:
-                                    results["errors"].append(f"Failed to create alert for {symbol}: {result.get('message', 'Unknown error')}")
-                                    
-                            except Exception as e:
-                                results["errors"].append(f"Error creating alert for {symbol}: {e}")
-                        else:
-                            results["suggestions"].append({
-                                "symbol": symbol,
-                                "alert_type": insight.alert_type.value,
-                                "confidence": insight.confidence,
-                                "reasoning": insight.reasoning,
-                                "suggested_action": insight.suggested_action
-                            })
-                
-                except Exception as e:
-                    results["errors"].append(f"Error processing {symbol}: {e}")
+        async with self.session.post(f"{self.base_url}/api/alerts/price", json=payload) as response:
+            return await response.json()
+    
+    async def create_news_alert(self, user_id: str, symbol: str, keywords: List[str],
+                              message: str) -> Dict[str, Any]:
+        """Create a news-based alert."""
         
-        return results
-
-    async def setup_news_monitoring(self, user_id: str, symbols: List[str], 
-                                  user_interests: List[str]) -> Dict[str, Any]:
-        """Set up news monitoring for symbols based on user interests"""
-        
-        results = {
-            "created_alerts": [],
-            "errors": []
+        payload = {
+            "user_id": user_id,
+            "symbol": symbol,
+            "keywords": keywords,
+            "message": message,
+            "active": True
         }
         
-        async with AlertManager(self.api_base_url) as alert_manager:
-            for symbol in symbols:
-                try:
-                    # Get recent news for the symbol to understand patterns
-                    recent_news = await self._get_recent_news(symbol)
-                    
-                    # Suggest news alert configurations
-                    news_requests = await self.analyzer.suggest_news_alerts(
-                        symbol, user_interests, recent_news
-                    )
-                    
-                    # Create news alerts
-                    for request in news_requests:
-                        try:
-                            result = await alert_manager.create_news_alert(user_id, request)
-                            if result.get('success'):
-                                results["created_alerts"].append({
-                                    "symbol": symbol,
-                                    "keywords": request.keywords,
-                                    "sources": request.sources,
-                                    "confidence": request.confidence
-                                })
-                            else:
-                                results["errors"].append(f"Failed to create news alert for {symbol}: {result.get('message', 'Unknown error')}")
-                                
-                        except Exception as e:
-                            results["errors"].append(f"Error creating news alert for {symbol}: {e}")
-                
-                except Exception as e:
-                    results["errors"].append(f"Error processing news monitoring for {symbol}: {e}")
+        async with self.session.post(f"{self.base_url}/api/alerts/news", json=payload) as response:
+            return await response.json()
+    
+    async def get_alert_insights(self, user_id: str, symbol: str) -> List[Dict[str, Any]]:
+        """Get AI-powered insights for alerts."""
         
-        return results
+        async with self.session.get(f"{self.base_url}/api/alerts/insights/{user_id}/{symbol}") as response:
+            return await response.json()
 
-    async def get_alert_summary(self, user_id: str) -> Dict[str, Any]:
-        """Get a summary of user's current alerts and recent activity"""
+# ============================================================================
+# MAIN COPILOT CLASS
+# ============================================================================
+
+class FrontierCopilot:
+    def __init__(self, openai_api_key: str, alert_service_url: str = "http://localhost:8002"):
+        self.openai_client = openai.OpenAI(api_key=openai_api_key)
+        self.alert_manager = AlertManager(alert_service_url)
+        self.analyzer = AlertAnalyzer(self.openai_client)
+        self.alert_service = CopilotAlertService(self.alert_manager, self.analyzer)
+        self.logger = logging.getLogger(__name__)
+    
+    async def analyze_stock(self, user_id: str, symbol: str, 
+                          market_data: Dict[str, Any],
+                          news_data: List[Dict[str, Any]] = None,
+                          account_data: Dict[str, Any] = None) -> CopilotSuggestion:
+        """Main method to analyze a stock and provide suggestions."""
         
-        async with AlertManager(self.api_base_url) as alert_manager:
-            try:
-                alerts = await alert_manager.get_user_alerts(user_id)
-                
-                summary = {
-                    "total_alerts": len(alerts),
-                    "active_alerts": len([a for a in alerts if a.get('is_active', True)]),
-                    "alert_types": {},
-                    "symbols": set(),
-                    "recent_activity": []
-                }
-                
-                for alert in alerts:
-                    alert_type = alert.get('alert_type', 'unknown')
-                    summary["alert_types"][alert_type] = summary["alert_types"].get(alert_type, 0) + 1
-                    summary["symbols"].add(alert.get('symbol', ''))
-                
-                summary["symbols"] = list(summary["symbols"])
-                
-                return summary
-                
-            except Exception as e:
-                logger.error(f"Error getting alert summary: {e}")
-                return {"error": str(e)}
-
-    def _get_price_target(self, insight: AlertInsight, current_price: float) -> Optional[float]:
-        """Extract price target from insight reasoning"""
-        # This is a simplified implementation
-        # In a real system, you'd parse the reasoning more intelligently
-        if insight.alert_type in [AlertType.PRICE_ABOVE, AlertType.PRICE_BELOW]:
-            # Extract numbers from reasoning that could be price targets
-            import re
-            numbers = re.findall(r'\$?(\d+\.?\d*)', insight.reasoning)
-            if numbers:
-                target = float(numbers[0])
-                if insight.alert_type == AlertType.PRICE_ABOVE and target > current_price:
-                    return target
-                elif insight.alert_type == AlertType.PRICE_BELOW and target < current_price:
-                    return target
-        return None
-
-    def _get_percentage_change(self, insight: AlertInsight) -> Optional[float]:
-        """Extract percentage change from insight reasoning"""
-        if insight.alert_type in [AlertType.PERCENTAGE_GAIN, AlertType.PERCENTAGE_LOSS]:
-            import re
-            percentages = re.findall(r'(\d+\.?\d*)%', insight.reasoning)
-            if percentages:
-                return float(percentages[0])
-        return None
-
-    async def _get_recent_news(self, symbol: str) -> List[Dict[str, Any]]:
-        """Get recent news for a symbol"""
-        # This would integrate with the news monitoring service
-        # For now, return mock data
-        return [
-            {
-                "title": f"Recent news about {symbol}",
-                "source": "Mock News",
-                "published_at": datetime.now().isoformat(),
-                "sentiment": 0.1
+        if news_data is None:
+            news_data = []
+        if account_data is None:
+            account_data = {"cash": 10000, "equity": 10000, "buying_power": 10000}
+        
+        async with self.alert_manager:
+            suggestion = await self.alert_service.setup_intelligent_alerts(
+                user_id, symbol, market_data, news_data, account_data
+            )
+        
+        return suggestion
+    
+    async def get_explainable_suggestion(self, suggestion: CopilotSuggestion) -> Dict[str, Any]:
+        """Convert suggestion to explainable format for UI."""
+        
+        return {
+            "type": "copilot.suggestion.v1",
+            "symbol": suggestion.symbol,
+            "suggestion": suggestion.suggestion,
+            "action_type": suggestion.action_type.value,
+            "confidence": suggestion.confidence,
+            "features": {
+                "volume_z_score": suggestion.features.volume_z_score,
+                "rsi": suggestion.features.rsi,
+                "news_sentiment": suggestion.features.news_sentiment,
+                "technical_signals": suggestion.features.technical_signals
+            },
+            "what_if": {
+                "quantity": suggestion.what_if.quantity,
+                "price": suggestion.what_if.price,
+                "estimated_cost": suggestion.what_if.estimated_cost,
+                "potential_pnl": suggestion.what_if.potential_pnl
+            },
+            "guardrails": {
+                "max_position_ok": suggestion.guardrails.max_position_ok,
+                "daily_loss_ok": suggestion.guardrails.daily_loss_ok,
+                "market_hours_ok": suggestion.guardrails.market_hours_ok,
+                "violations": suggestion.guardrails.violations
+            },
+            "compliance": {
+                "disclaimer": suggestion.compliance.disclaimer,
+                "requires_confirmation": suggestion.compliance.requires_confirmation,
+                "risk_disclosure": suggestion.compliance.risk_disclosure
             }
-        ]
+        }
 
-# Example usage
+# ============================================================================
+# EXAMPLE USAGE
+# ============================================================================
+
 async def main():
-    # Initialize the copilot alert service
-    copilot = CopilotAlertService(
+    """Example usage of the enhanced Copilot."""
+    
+    # Initialize copilot
+    copilot = FrontierCopilot(
         openai_api_key="your-openai-api-key",
-        api_base_url="http://localhost:8000"
+        alert_service_url="http://localhost:8002"
     )
     
-    # Example user data
-    user_id = "user123"
-    symbols = ["AAPL", "GOOGL", "TSLA"]
-    user_interests = ["technology", "growth stocks", "earnings announcements"]
-    
-    # Mock market data
+    # Example market data
     market_data = {
-        "AAPL": {
-            "price": 150.25,
-            "high_52w": 180.50,
-            "low_52w": 120.00,
-            "volume": 50000000,
-            "avg_volume": 45000000,
-            "pe_ratio": 25.5,
-            "market_cap": 2500000000000
-        },
-        "GOOGL": {
-            "price": 2800.75,
-            "high_52w": 3000.00,
-            "low_52w": 2200.00,
-            "volume": 2000000,
-            "avg_volume": 1800000,
-            "pe_ratio": 30.2,
-            "market_cap": 1800000000000
-        },
-        "TSLA": {
-            "price": 850.50,
-            "high_52w": 900.00,
-            "low_52w": 600.00,
-            "volume": 30000000,
-            "avg_volume": 25000000,
-            "pe_ratio": 150.0,
-            "market_cap": 800000000000
-        }
+        "price": 150.25,
+        "volume": 1000000,
+        "change_percent": 2.5,
+        "rsi": 65.5,
+        "volume_avg": 800000,
+        "volume_z_score": 1.25,
+        "news_sentiment": 0.3
     }
     
-    # Set up intelligent alerts
-    alert_results = await copilot.setup_intelligent_alerts(user_id, symbols, user_interests, market_data)
-    print("Alert Setup Results:", json.dumps(alert_results, indent=2))
+    # Example account data
+    account_data = {
+        "cash": 50000,
+        "equity": 100000,
+        "buying_power": 50000,
+        "daily_pnl": -500,
+        "daily_loss_limit": -1000
+    }
     
-    # Set up news monitoring
-    news_results = await copilot.setup_news_monitoring(user_id, symbols, user_interests)
-    print("News Monitoring Results:", json.dumps(news_results, indent=2))
+    # Analyze stock
+    suggestion = await copilot.analyze_stock(
+        user_id="user123",
+        symbol="AAPL",
+        market_data=market_data,
+        account_data=account_data
+    )
     
-    # Get alert summary
-    summary = await copilot.get_alert_summary(user_id)
-    print("Alert Summary:", json.dumps(summary, indent=2))
+    # Get explainable format
+    explainable = await copilot.get_explainable_suggestion(suggestion)
+    
+    print("Copilot Suggestion:")
+    print(json.dumps(explainable, indent=2, default=str))
 
 if __name__ == "__main__":
     asyncio.run(main())

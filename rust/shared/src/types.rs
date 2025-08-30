@@ -1,435 +1,469 @@
 use serde::{Deserialize, Serialize};
-use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
+use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub enum AssetType {
-    Stock,
-    Etf,
-    Crypto,
-    Forex,
-    Futures,
-    Options,
+// ============================================================================
+// MONEY MATH - Fixed-point decimal for all monetary values
+// ============================================================================
+
+/// Represents a monetary amount with fixed-point precision
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct Money {
+    pub amount: Decimal,
+    pub currency: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub enum OrderType {
-    Market,
-    Limit,
-    Stop,
-    StopLimit,
-    TrailingStop,
+impl Money {
+    pub fn new(amount: Decimal, currency: &str) -> Self {
+        Self {
+            amount,
+            currency: currency.to_string(),
+        }
+    }
+
+    pub fn zero(currency: &str) -> Self {
+        Self::new(Decimal::ZERO, currency)
+    }
+
+    pub fn from_cents(cents: i64, currency: &str) -> Self {
+        Self::new(Decimal::new(cents, 2), currency)
+    }
+
+    pub fn to_cents(&self) -> i64 {
+        (self.amount * Decimal::new(100, 0)).to_i64().unwrap_or(0)
+    }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+impl std::ops::Add for Money {
+    type Output = Self;
+    fn add(self, other: Self) -> Self {
+        assert_eq!(self.currency, other.currency, "Currency mismatch");
+        Self::new(self.amount + other.amount, &self.currency)
+    }
+}
+
+impl std::ops::Sub for Money {
+    type Output = Self;
+    fn sub(self, other: Self) -> Self {
+        assert_eq!(self.currency, other.currency, "Currency mismatch");
+        Self::new(self.amount - other.amount, &self.currency)
+    }
+}
+
+impl std::ops::Mul<Decimal> for Money {
+    type Output = Self;
+    fn mul(self, multiplier: Decimal) -> Self {
+        Self::new(self.amount * multiplier, &self.currency)
+    }
+}
+
+// ============================================================================
+// UNIFIED EVENT MODEL - Versioned events across all services
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Event {
+    pub id: Uuid,
+    pub event_type: String,
+    pub schema_version: String,
+    pub timestamp: DateTime<Utc>,
+    pub source: String,
+    pub payload: EventPayload,
+    pub metadata: EventMetadata,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EventMetadata {
+    pub correlation_id: Option<Uuid>,
+    pub user_id: Option<String>,
+    pub session_id: Option<String>,
+    pub trace_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
+pub enum EventPayload {
+    // Order Events
+    OrderRequested(OrderRequestedEvent),
+    OrderAccepted(OrderAcceptedEvent),
+    OrderRejected(OrderRejectedEvent),
+    OrderFilled(OrderFilledEvent),
+    OrderCancelled(OrderCancelledEvent),
+    
+    // Position Events
+    PositionUpdated(PositionUpdatedEvent),
+    PositionClosed(PositionClosedEvent),
+    
+    // Account Events
+    AccountUpdated(AccountUpdatedEvent),
+    CashUpdated(CashUpdatedEvent),
+    
+    // Market Data Events
+    MarketTick(MarketTickEvent),
+    PriceAlert(PriceAlertEvent),
+    
+    // Alert Events
+    AlertRaised(AlertRaisedEvent),
+    AlertTriggered(AlertTriggeredEvent),
+    
+    // Copilot Events
+    CopilotSuggestion(CopilotSuggestionEvent),
+    CopilotAnalysis(CopilotAnalysisEvent),
+    
+    // News Events
+    NewsArticle(NewsArticleEvent),
+    SentimentUpdate(SentimentUpdateEvent),
+}
+
+// ============================================================================
+// ORDER EVENTS
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OrderRequestedEvent {
+    pub order_id: Uuid,
+    pub user_id: String,
+    pub symbol: String,
+    pub side: OrderSide,
+    pub order_type: OrderType,
+    pub quantity: Decimal,
+    pub price: Option<Money>,
+    pub time_in_force: TimeInForce,
+    pub source: String, // "manual", "copilot", "algo"
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OrderAcceptedEvent {
+    pub order_id: Uuid,
+    pub broker_order_id: Option<String>,
+    pub timestamp: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OrderRejectedEvent {
+    pub order_id: Uuid,
+    pub reason: String,
+    pub error_code: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OrderFilledEvent {
+    pub order_id: Uuid,
+    pub fill_id: Uuid,
+    pub quantity: Decimal,
+    pub price: Money,
+    pub commission: Money,
+    pub timestamp: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OrderCancelledEvent {
+    pub order_id: Uuid,
+    pub reason: String,
+    pub timestamp: DateTime<Utc>,
+}
+
+// ============================================================================
+// POSITION EVENTS
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PositionUpdatedEvent {
+    pub user_id: String,
+    pub symbol: String,
+    pub quantity: Decimal,
+    pub average_price: Money,
+    pub market_price: Money,
+    pub realized_pnl: Money,
+    pub unrealized_pnl: Money,
+    pub market_value: Money,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PositionClosedEvent {
+    pub user_id: String,
+    pub symbol: String,
+    pub final_pnl: Money,
+    pub close_reason: String,
+}
+
+// ============================================================================
+// ACCOUNT EVENTS
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AccountUpdatedEvent {
+    pub user_id: String,
+    pub cash: Money,
+    pub equity: Money,
+    pub buying_power: Money,
+    pub day_trade_count: i32,
+    pub pattern_day_trader: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CashUpdatedEvent {
+    pub user_id: String,
+    pub previous_cash: Money,
+    pub new_cash: Money,
+    pub change_reason: String,
+}
+
+// ============================================================================
+// MARKET DATA EVENTS
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MarketTickEvent {
+    pub symbol: String,
+    pub price: Money,
+    pub volume: u64,
+    pub timestamp: DateTime<Utc>,
+    pub bid: Option<Money>,
+    pub ask: Option<Money>,
+    pub high: Option<Money>,
+    pub low: Option<Money>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PriceAlertEvent {
+    pub alert_id: Uuid,
+    pub symbol: String,
+    pub trigger_price: Money,
+    pub current_price: Money,
+    pub alert_type: String,
+}
+
+// ============================================================================
+// ALERT EVENTS
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AlertRaisedEvent {
+    pub alert_id: Uuid,
+    pub user_id: String,
+    pub symbol: String,
+    pub alert_type: String,
+    pub message: String,
+    pub priority: AlertPriority,
+    pub metadata: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AlertTriggeredEvent {
+    pub alert_id: Uuid,
+    pub trigger_data: serde_json::Value,
+    pub timestamp: DateTime<Utc>,
+}
+
+// ============================================================================
+// COPILOT EVENTS
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CopilotSuggestionEvent {
+    pub suggestion_id: Uuid,
+    pub user_id: String,
+    pub symbol: String,
+    pub suggestion: String,
+    pub action_type: CopilotActionType,
+    pub confidence: f64, // 0.0 to 1.0
+    pub risk_impact: RiskImpact,
+    pub features: CopilotFeatures,
+    pub what_if: WhatIfAnalysis,
+    pub guardrails: GuardrailCheck,
+    pub compliance: ComplianceInfo,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CopilotAnalysisEvent {
+    pub analysis_id: Uuid,
+    pub user_id: String,
+    pub symbol: String,
+    pub analysis_type: String,
+    pub insights: Vec<String>,
+    pub sentiment: f64, // -1.0 to 1.0
+    pub technical_indicators: serde_json::Value,
+    pub news_summary: Option<String>,
+}
+
+// ============================================================================
+// NEWS EVENTS
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NewsArticleEvent {
+    pub article_id: Uuid,
+    pub title: String,
+    pub summary: String,
+    pub url: String,
+    pub source: String,
+    pub published_at: DateTime<Utc>,
+    pub symbols: Vec<String>,
+    pub sentiment: f64, // -1.0 to 1.0
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SentimentUpdateEvent {
+    pub symbol: String,
+    pub sentiment: f64,
+    pub confidence: f64,
+    pub sources: Vec<String>,
+    pub timestamp: DateTime<Utc>,
+}
+
+// ============================================================================
+// SUPPORTING TYPES
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum OrderSide {
     Buy,
     Sell,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub enum OrderStatus {
-    Pending,
-    Partial,
-    Filled,
-    Cancelled,
-    Rejected,
-    Expired,
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum OrderType {
+    Market,
+    Limit,
+    Stop,
+    StopLimit,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum TimeInForce {
     Day,
-    Gtc, // Good Till Cancelled
-    Ioc, // Immediate or Cancel
-    Fok, // Fill or Kill
+    GTC, // Good Till Cancelled
+    IOC, // Immediate or Cancel
+    FOK, // Fill or Kill
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Asset {
-    pub symbol: String,
-    pub exchange: String,
-    pub asset_type: AssetType,
-    pub name: String,
-    pub currency: String,
-    pub tick_size: Decimal,
-    pub lot_size: Decimal,
-    pub is_active: bool,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+pub enum AlertPriority {
+    Low,
+    Medium,
+    High,
+    Critical,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Price {
-    pub value: Decimal,
-    pub precision: u32,
+pub enum CopilotActionType {
+    Buy,
+    Sell,
+    Hold,
+    Watch,
+    Alert,
 }
 
-impl Price {
-    pub fn new(value: Decimal, precision: u32) -> Self {
-        Self { value, precision }
-    }
-    
-    pub fn from_f64(value: f64, precision: u32) -> Self {
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RiskImpact {
+    pub estimated_drawdown: Money,
+    pub bp_usage: Decimal, // Percentage of buying power
+    pub max_loss: Money,
+    pub risk_reward_ratio: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CopilotFeatures {
+    pub volume_z_score: Option<f64>,
+    pub rsi: Option<f64>,
+    pub news_sentiment: Option<f64>,
+    pub technical_signals: Vec<String>,
+    pub fundamental_metrics: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WhatIfAnalysis {
+    pub quantity: Decimal,
+    pub price: Money,
+    pub estimated_cost: Money,
+    pub estimated_fees: Money,
+    pub potential_pnl: Money,
+    pub risk_metrics: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GuardrailCheck {
+    pub max_position_ok: bool,
+    pub daily_loss_ok: bool,
+    pub market_hours_ok: bool,
+    pub pattern_day_trader_ok: bool,
+    pub risk_limits_ok: bool,
+    pub violations: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ComplianceInfo {
+    pub disclaimer: String,
+    pub requires_confirmation: bool,
+    pub not_financial_advice: bool,
+    pub risk_disclosure: String,
+}
+
+// ============================================================================
+// UTILITY FUNCTIONS
+// ============================================================================
+
+impl Event {
+    pub fn new(
+        event_type: &str,
+        payload: EventPayload,
+        source: &str,
+        user_id: Option<String>,
+    ) -> Self {
         Self {
-            value: Decimal::from_f64(value).unwrap_or_default(),
-            precision,
+            id: Uuid::new_v4(),
+            event_type: event_type.to_string(),
+            schema_version: "v1".to_string(),
+            timestamp: Utc::now(),
+            source: source.to_string(),
+            payload,
+            metadata: EventMetadata {
+                correlation_id: None,
+                user_id,
+                session_id: None,
+                trace_id: None,
+            },
         }
     }
-    
-    pub fn to_string(&self) -> String {
-        format!("{:.prec$}", self.value, prec = self.precision as usize)
+
+    pub fn with_correlation_id(mut self, correlation_id: Uuid) -> Self {
+        self.metadata.correlation_id = Some(correlation_id);
+        self
+    }
+
+    pub fn with_session_id(mut self, session_id: String) -> Self {
+        self.metadata.session_id = Some(session_id);
+        self
+    }
+
+    pub fn with_trace_id(mut self, trace_id: String) -> Self {
+        self.metadata.trace_id = Some(trace_id);
+        self
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Quantity {
-    pub value: Decimal,
-    pub precision: u32,
+// ============================================================================
+// SERIALIZATION HELPERS
+// ============================================================================
+
+impl std::fmt::Display for Money {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} {}", self.amount, self.currency)
+    }
 }
 
-impl Quantity {
-    pub fn new(value: Decimal, precision: u32) -> Self {
-        Self { value, precision }
-    }
-    
-    pub fn from_f64(value: f64, precision: u32) -> Self {
-        Self {
-            value: Decimal::from_f64(value).unwrap_or_default(),
-            precision,
+impl std::str::FromStr for Money {
+    type Err = rust_decimal::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let parts: Vec<&str> = s.split_whitespace().collect();
+        if parts.len() != 2 {
+            return Err(rust_decimal::Error::InvalidDecimal);
         }
+        let amount = parts[0].parse::<Decimal>()?;
+        let currency = parts[1].to_string();
+        Ok(Money::new(amount, &currency))
     }
-    
-    pub fn to_string(&self) -> String {
-        format!("{:.prec$}", self.value, prec = self.precision as usize)
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MarketTick {
-    pub asset: Asset,
-    pub bid: Price,
-    pub ask: Price,
-    pub last: Price,
-    pub bid_size: Quantity,
-    pub ask_size: Quantity,
-    pub volume: Quantity,
-    pub timestamp: DateTime<Utc>,
-}
-
-impl MarketTick {
-    pub fn spread(&self) -> Price {
-        Price::new(self.ask.value - self.bid.value, self.bid.precision)
-    }
-    
-    pub fn mid(&self) -> Price {
-        Price::new((self.bid.value + self.ask.value) / Decimal::from(2), self.bid.precision)
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Order {
-    pub id: Uuid,
-    pub client_order_id: String,
-    pub user_id: Uuid,
-    pub asset: Asset,
-    pub order_type: OrderType,
-    pub side: OrderSide,
-    pub quantity: Quantity,
-    pub limit_price: Option<Price>,
-    pub stop_price: Option<Price>,
-    pub time_in_force: TimeInForce,
-    pub status: OrderStatus,
-    pub filled_quantity: Quantity,
-    pub average_fill_price: Option<Price>,
-    pub commission: Decimal,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-    pub expires_at: Option<DateTime<Utc>>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Trade {
-    pub id: Uuid,
-    pub order_id: Uuid,
-    pub user_id: Uuid,
-    pub asset: Asset,
-    pub side: OrderSide,
-    pub quantity: Quantity,
-    pub price: Price,
-    pub commission: Decimal,
-    pub exchange: String,
-    pub timestamp: DateTime<Utc>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Position {
-    pub id: Uuid,
-    pub user_id: Uuid,
-    pub asset: Asset,
-    pub quantity: Quantity,
-    pub average_price: Price,
-    pub current_price: Price,
-    pub unrealized_pnl: Decimal,
-    pub realized_pnl: Decimal,
-    pub market_value: Decimal,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-}
-
-impl Position {
-    pub fn calculate_unrealized_pnl(&mut self) {
-        let current_value = self.quantity.value * self.current_price.value;
-        let cost_basis = self.quantity.value * self.average_price.value;
-        self.unrealized_pnl = current_value - cost_basis;
-        self.market_value = current_value;
-    }
-    
-    pub fn total_pnl(&self) -> Decimal {
-        self.unrealized_pnl + self.realized_pnl
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Account {
-    pub id: Uuid,
-    pub user_id: Uuid,
-    pub name: String,
-    pub currency: String,
-    pub cash: Decimal,
-    pub buying_power: Decimal,
-    pub equity: Decimal,
-    pub margin_used: Decimal,
-    pub margin_available: Decimal,
-    pub is_paper_trading: bool,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RiskLimits {
-    pub id: Uuid,
-    pub user_id: Uuid,
-    pub max_position_size: Decimal,
-    pub max_daily_loss: Decimal,
-    pub max_drawdown: Decimal,
-    pub max_leverage: Decimal,
-    pub allow_short_selling: bool,
-    pub allow_options: bool,
-    pub allow_futures: bool,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RiskMetrics {
-    pub total_pnl: Decimal,
-    pub daily_pnl: Decimal,
-    pub max_drawdown: Decimal,
-    pub current_drawdown: Decimal,
-    pub portfolio_value: Decimal,
-    pub margin_used: Decimal,
-    pub margin_available: Decimal,
-    pub leverage: Decimal,
-    pub beta: Decimal,
-    pub sharpe_ratio: Decimal,
-    pub volatility: Decimal,
-    pub timestamp: DateTime<Utc>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RiskViolation {
-    pub id: Uuid,
-    pub user_id: Uuid,
-    pub violation_type: ViolationType,
-    pub message: String,
-    pub current_value: Decimal,
-    pub limit_value: Decimal,
-    pub timestamp: DateTime<Utc>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub enum ViolationType {
-    PositionSize,
-    DailyLoss,
-    Drawdown,
-    Leverage,
-    Concentration,
-    Margin,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OrderBookEntry {
-    pub price: Price,
-    pub quantity: Quantity,
-    pub order_id: Uuid,
-    pub timestamp: DateTime<Utc>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OrderBook {
-    pub symbol: String,
-    pub bids: Vec<OrderBookEntry>,
-    pub asks: Vec<OrderBookEntry>,
-    pub timestamp: DateTime<Utc>,
-}
-
-impl OrderBook {
-    pub fn best_bid(&self) -> Option<&OrderBookEntry> {
-        self.bids.first()
-    }
-    
-    pub fn best_ask(&self) -> Option<&OrderBookEntry> {
-        self.asks.first()
-    }
-    
-    pub fn spread(&self) -> Option<Price> {
-        if let (Some(best_bid), Some(best_ask)) = (self.best_bid(), self.best_ask()) {
-            Some(Price::new(
-                best_ask.price.value - best_bid.price.value,
-                best_bid.price.precision,
-            ))
-        } else {
-            None
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct User {
-    pub id: Uuid,
-    pub email: String,
-    pub username: String,
-    pub first_name: String,
-    pub last_name: String,
-    pub is_active: bool,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ApiKey {
-    pub id: Uuid,
-    pub user_id: Uuid,
-    pub name: String,
-    pub key: String,
-    pub secret: String,
-    pub permissions: Vec<String>,
-    pub is_active: bool,
-    pub created_at: DateTime<Utc>,
-    pub last_used_at: Option<DateTime<Utc>>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BrokerAdapter {
-    pub id: Uuid,
-    pub name: String,
-    pub adapter_type: AdapterType,
-    pub config: serde_json::Value,
-    pub is_active: bool,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub enum AdapterType {
-    PaperTrading,
-    Alpaca,
-    InteractiveBrokers,
-    Binance,
-    Coinbase,
-    Custom,
-}
-
-// WebSocket message types
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type", content = "data")]
-pub enum WebSocketMessage {
-    MarketTick(MarketTick),
-    OrderUpdate(Order),
-    TradeExecution(Trade),
-    PositionUpdate(Position),
-    AccountUpdate(Account),
-    RiskViolation(RiskViolation),
-    OrderBookUpdate(OrderBook),
-    Error { message: String },
-    Ping,
-    Pong,
-}
-
-// API request/response types
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CreateOrderRequest {
-    pub symbol: String,
-    pub order_type: OrderType,
-    pub side: OrderSide,
-    pub quantity: f64,
-    pub limit_price: Option<f64>,
-    pub stop_price: Option<f64>,
-    pub time_in_force: TimeInForce,
-    pub client_order_id: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CreateOrderResponse {
-    pub order: Order,
-    pub message: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CancelOrderRequest {
-    pub order_id: Uuid,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CancelOrderResponse {
-    pub success: bool,
-    pub message: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GetOrdersRequest {
-    pub symbol: Option<String>,
-    pub status: Option<OrderStatus>,
-    pub limit: Option<u32>,
-    pub offset: Option<u32>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GetOrdersResponse {
-    pub orders: Vec<Order>,
-    pub total: u64,
-    pub limit: u32,
-    pub offset: u32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GetPositionsResponse {
-    pub positions: Vec<Position>,
-    pub total_value: Decimal,
-    pub total_pnl: Decimal,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GetAccountResponse {
-    pub account: Account,
-    pub risk_metrics: RiskMetrics,
-}
-
-// Pagination
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PaginationParams {
-    pub page: Option<u32>,
-    pub limit: Option<u32>,
-    pub offset: Option<u32>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PaginatedResponse<T> {
-    pub data: Vec<T>,
-    pub total: u64,
-    pub page: u32,
-    pub limit: u32,
-    pub total_pages: u32,
 }
