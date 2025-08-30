@@ -1,0 +1,71 @@
+[package]
+name = "frontier-trading"
+version = "0.1.0"
+edition = "2021"
+
+[workspace]
+members = [
+    "api",
+    "websocket",
+    "adapters",
+    "ai",
+    "shared",
+    "notifications"
+]
+
+[dependencies]
+tokio = { version = "1.0", features = ["full"] }
+axum = "0.7"
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+anyhow = "1.0"
+thiserror = "1.0"
+uuid = { version = "1.0", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "chrono", "uuid"] }
+redis = { version = "0.23", features = ["tokio-comp"] }
+reqwest = { version = "0.11", features = ["json"] }
+websocket = "0.26"
+futures = "0.3"
+async-trait = "0.1"
+dashmap = "5.5"
+parking_lot = "0.12"
+config = "0.14"
+dotenv = "0.15"
+clap = { version = "4.0", features = ["derive"] }
+
+# AI and ML
+openai = "0.20"
+tiktoken-rs = "0.8"
+rust-bert = "0.21"
+
+# Market data and trading
+yahoo_finance = "0.1"
+alpha_vantage = "0.1"
+binance = "0.20"
+
+# Utilities
+rand = "0.8"
+base64 = "0.21"
+hex = "0.4"
+hmac = "0.12"
+sha2 = "0.10"
+
+[dev-dependencies]
+tokio-test = "0.4"
+mockall = "0.11"
+testcontainers = "0.15"
+
+[[bin]]
+name = "frontier-trading"
+path = "src/main.rs"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
