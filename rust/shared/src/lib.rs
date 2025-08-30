@@ -1,8 +1,10 @@
 pub mod types;
 pub mod event_bus;
+pub mod risk_guardrails;
 
 pub use types::*;
 pub use event_bus::*;
+pub use risk_guardrails::*;
 pub mod error;
 pub mod constants;
 

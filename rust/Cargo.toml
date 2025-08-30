@@ -10,7 +10,8 @@ members = [
     "adapters",
     "ai",
     "shared",
-    "notifications"
+    "notifications",
+    "api_gateway"
 ]
 
 [dependencies]
