@@ -1,0 +1,50 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Market Tick Events Schema v1",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1"
+    },
+    "symbol": {
+      "type": "string"
+    },
+    "ts": {
+      "type": "number",
+      "description": "Unix timestamp in milliseconds"
+    },
+    "price": {
+      "type": "string",
+      "pattern": "^\\d+(\\.\\d+)?$",
+      "description": "Price as string to avoid floating point precision issues"
+    },
+    "source": {
+      "type": "string",
+      "enum": ["sim", "polygon", "alpaca", "iex", "binance"]
+    },
+    "volume": {
+      "type": "string",
+      "pattern": "^\\d+(\\.\\d+)?$",
+      "description": "Volume as string"
+    },
+    "bid": {
+      "type": "string",
+      "pattern": "^\\d+(\\.\\d+)?$"
+    },
+    "ask": {
+      "type": "string",
+      "pattern": "^\\d+(\\.\\d+)?$"
+    },
+    "high": {
+      "type": "string",
+      "pattern": "^\\d+(\\.\\d+)?$"
+    },
+    "low": {
+      "type": "string",
+      "pattern": "^\\d+(\\.\\d+)?$"
+    }
+  },
+  "required": ["schema_version", "symbol", "ts", "price", "source"],
+  "additionalProperties": false
+}

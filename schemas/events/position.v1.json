@@ -1,0 +1,55 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Position Events Schema v1",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1"
+    },
+    "correlation_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "event_type": {
+      "type": "string",
+      "enum": ["position.updated", "position.closed"]
+    },
+    "payload": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "user_id": { "type": "string" },
+            "symbol": { "type": "string" },
+            "quantity": { "type": "string", "pattern": "^\\d+(\\.\\d+)?$" },
+            "average_price": { "type": "string", "pattern": "^\\d+(\\.\\d+)?$" },
+            "market_price": { "type": "string", "pattern": "^\\d+(\\.\\d+)?$" },
+            "realized_pnl": { "type": "string", "pattern": "^\\d+(\\.\\d+)?$" },
+            "unrealized_pnl": { "type": "string", "pattern": "^\\d+(\\.\\d+)?$" },
+            "market_value": { "type": "string", "pattern": "^\\d+(\\.\\d+)?$" }
+          },
+          "required": ["user_id", "symbol", "quantity", "average_price", "market_price"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "user_id": { "type": "string" },
+            "symbol": { "type": "string" },
+            "final_pnl": { "type": "string", "pattern": "^\\d+(\\.\\d+)?$" },
+            "close_reason": { "type": "string" }
+          },
+          "required": ["user_id", "symbol", "final_pnl", "close_reason"],
+          "additionalProperties": false
+        }
+      ]
+    }
+  },
+  "required": ["schema_version", "correlation_id", "timestamp", "event_type", "payload"],
+  "additionalProperties": false
+}

@@ -1,0 +1,88 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Order Events Schema v1",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1"
+    },
+    "correlation_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "event_type": {
+      "type": "string",
+      "enum": ["order.requested", "order.accepted", "order.filled", "order.rejected", "order.cancelled"]
+    },
+    "payload": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "order_id": { "type": "string", "format": "uuid" },
+            "user_id": { "type": "string" },
+            "symbol": { "type": "string" },
+            "side": { "type": "string", "enum": ["buy", "sell"] },
+            "order_type": { "type": "string", "enum": ["market", "limit"] },
+            "quantity": { "type": "string", "pattern": "^\\d+(\\.\\d+)?$" },
+            "price": { "type": "string", "pattern": "^\\d+(\\.\\d+)?$" },
+            "time_in_force": { "type": "string", "enum": ["day", "gtc", "ioc", "fok"] },
+            "source": { "type": "string", "enum": ["manual", "copilot", "algo"] }
+          },
+          "required": ["order_id", "user_id", "symbol", "side", "order_type", "quantity"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "order_id": { "type": "string", "format": "uuid" },
+            "broker_order_id": { "type": "string" },
+            "timestamp": { "type": "string", "format": "date-time" }
+          },
+          "required": ["order_id"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "order_id": { "type": "string", "format": "uuid" },
+            "fill_id": { "type": "string", "format": "uuid" },
+            "quantity": { "type": "string", "pattern": "^\\d+(\\.\\d+)?$" },
+            "price": { "type": "string", "pattern": "^\\d+(\\.\\d+)?$" },
+            "commission": { "type": "string", "pattern": "^\\d+(\\.\\d+)?$" },
+            "timestamp": { "type": "string", "format": "date-time" }
+          },
+          "required": ["order_id", "fill_id", "quantity", "price"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "order_id": { "type": "string", "format": "uuid" },
+            "reason": { "type": "string" },
+            "error_code": { "type": "string" }
+          },
+          "required": ["order_id", "reason"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "order_id": { "type": "string", "format": "uuid" },
+            "reason": { "type": "string" },
+            "timestamp": { "type": "string", "format": "date-time" }
+          },
+          "required": ["order_id", "reason"],
+          "additionalProperties": false
+        }
+      ]
+    }
+  },
+  "required": ["schema_version", "correlation_id", "timestamp", "event_type", "payload"],
+  "additionalProperties": false
+}

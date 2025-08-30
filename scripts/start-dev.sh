@@ -34,9 +34,15 @@ print_error() {
 check_dependencies() {
     print_status "Checking dependencies..."
     
-    # Check C++ compiler
-    if ! command -v g++ &> /dev/null && ! command -v clang++ &> /dev/null; then
-        print_error "C++ compiler (g++ or clang++) not found"
+    # Check Docker
+    if ! command -v docker &> /dev/null; then
+        print_error "Docker not found. Please install Docker first."
+        exit 1
+    fi
+    
+    # Check Docker Compose
+    if ! command -v docker-compose &> /dev/null && ! docker compose version &> /dev/null; then
+        print_error "Docker Compose not found. Please install Docker Compose first."
         exit 1
     fi
     
@@ -52,33 +58,27 @@ check_dependencies() {
         exit 1
     fi
     
-    # Check CMake
-    if ! command -v cmake &> /dev/null; then
-        print_error "CMake not found"
-        exit 1
-    fi
-    
     print_success "All dependencies found"
 }
 
-# Build C++ trading engine
-build_cpp_engine() {
-    print_status "Building C++ trading engine..."
+# Start infrastructure with Docker Compose
+start_infrastructure() {
+    print_status "Starting infrastructure with Docker Compose..."
     
-    cd cpp
+    # Start PostgreSQL and Redis
+    docker compose up -d
     
-    # Create build directory
-    mkdir -p build
-    cd build
+    # Wait for services to be ready
+    print_status "Waiting for infrastructure to be ready..."
+    sleep 10
     
-    # Configure with CMake
-    cmake .. -DCMAKE_BUILD_TYPE=Debug
-    
-    # Build
-    make -j$(nproc)
-    
-    print_success "C++ engine built successfully"
-    cd ../..
+    # Check if services are running
+    if docker compose ps | grep -q "Up"; then
+        print_success "Infrastructure started successfully"
+    else
+        print_error "Failed to start infrastructure"
+        exit 1
+    fi
 }
 
 # Build Rust services
@@ -107,50 +107,37 @@ install_frontend_deps() {
     cd ..
 }
 
-# Start PostgreSQL (if not running)
-start_postgres() {
-    print_status "Checking PostgreSQL..."
-    
-    if ! pg_isready -q; then
-        print_warning "PostgreSQL not running. Please start PostgreSQL manually:"
-        echo "  brew services start postgresql@14  # macOS"
-        echo "  sudo systemctl start postgresql    # Linux"
-        echo "  # Or start your preferred database"
-    else
-        print_success "PostgreSQL is running"
-    fi
-}
-
-# Start Redis (if not running)
-start_redis() {
-    print_status "Checking Redis..."
-    
-    if ! redis-cli ping &> /dev/null; then
-        print_warning "Redis not running. Please start Redis manually:"
-        echo "  brew services start redis          # macOS"
-        echo "  sudo systemctl start redis         # Linux"
-    else
-        print_success "Redis is running"
-    fi
-}
-
 # Start all services
 start_services() {
     print_status "Starting services..."
     
-    # Start C++ engine in background
-    print_status "Starting C++ trading engine..."
-    cd cpp/build
-    ./frontier_trading &
-    CPP_PID=$!
+    # Start Market Data service
+    print_status "Starting Market Data service on port 8001..."
+    cd rust/market_data
+    cargo run &
+    MARKET_DATA_PID=$!
     cd ../..
     
-    # Start Rust API server in background
-    print_status "Starting Rust API server..."
-    cd rust
-    cargo run --bin api &
-    RUST_PID=$!
-    cd ..
+    # Start Copilot service
+    print_status "Starting Copilot service on port 8004..."
+    cd rust/copilot
+    cargo run &
+    COPILOT_PID=$!
+    cd ../..
+    
+    # Start API Gateway
+    print_status "Starting API Gateway on port 8000..."
+    cd rust/api_gateway
+    cargo run &
+    GATEWAY_PID=$!
+    cd ../..
+    
+    # Start notification service
+    print_status "Starting notification service on port 8002..."
+    cd rust/notifications
+    cargo run &
+    NOTIFICATION_PID=$!
+    cd ../..
     
     # Start frontend development server
     print_status "Starting frontend development server..."
@@ -160,15 +147,21 @@ start_services() {
     cd ..
     
     # Save PIDs for cleanup
-    echo $CPP_PID > .dev-pids
-    echo $RUST_PID >> .dev-pids
+    echo $MARKET_DATA_PID > .dev-pids
+    echo $COPILOT_PID >> .dev-pids
+    echo $GATEWAY_PID >> .dev-pids
+    echo $NOTIFICATION_PID >> .dev-pids
     echo $FRONTEND_PID >> .dev-pids
     
     print_success "All services started"
     print_status "Services running on:"
-    echo "  - Frontend: http://localhost:5173"
-    echo "  - Rust API: http://localhost:8080"
-    echo "  - C++ Engine: Running on port 8081"
+    echo "  - API Gateway: http://localhost:8000"
+    echo "  - Market Data: http://localhost:8001"
+    echo "  - Notifications: http://localhost:8002"
+    echo "  - Copilot: http://localhost:8004"
+    echo "  - Frontend: http://localhost:3000"
+    echo "  - PostgreSQL: localhost:5432"
+    echo "  - Redis: localhost:6379"
     
     # Wait for user interrupt
     echo ""
@@ -188,6 +181,9 @@ start_services() {
             rm .dev-pids
         fi
         
+        print_status "Stopping infrastructure..."
+        docker compose down
+        
         print_success "All services stopped"
         exit 0
     }
@@ -202,7 +198,7 @@ start_services() {
 # Main execution
 main() {
     # Check if we're in the right directory
-    if [ ! -f "README.md" ] || [ ! -d "cpp" ] || [ ! -d "rust" ] || [ ! -d "frontend" ]; then
+    if [ ! -f "README.md" ] || [ ! -f "docker-compose.yml" ]; then
         print_error "Please run this script from the project root directory"
         exit 1
     fi
@@ -210,12 +206,10 @@ main() {
     # Check dependencies
     check_dependencies
     
-    # Start database services
-    start_postgres
-    start_redis
+    # Start infrastructure
+    start_infrastructure
     
     # Build components
-    build_cpp_engine
     build_rust_services
     install_frontend_deps
     

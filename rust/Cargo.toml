@@ -11,7 +11,9 @@ members = [
     "ai",
     "shared",
     "notifications",
-    "api_gateway"
+    "api_gateway",
+    "market_data",
+    "copilot"
 ]
 
 [dependencies]
