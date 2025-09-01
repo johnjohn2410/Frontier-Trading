@@ -1,123 +1,97 @@
 # Frontier Trading Platform
 
-A modern, multi-asset trading platform built with C++, Rust, and React, featuring an AI-powered Copilot for intelligent trading insights and alerts.
+A modern, multi-asset trading platform built with C++, Rust, and React, featuring an AI-powered Copilot for intelligent trading insights and real-time order execution.
 
-## 🚀 Current Status
+## Current Status
 
-### ✅ Completed Components
+### Completed Components
 
 1. **C++ Trading Engine** - Core trading logic with paper trading support
-   - Order management and execution
+   - Order management and execution via JSON-RPC
    - Position tracking and P&L calculation
    - Risk management and limits
    - Real-time market data processing
    - Comprehensive test suite
 
-2. **AI Copilot Alert System** - Intelligent stock monitoring and notifications
-   - Price alerts (above/below targets, percentage changes)
-   - News monitoring with sentiment analysis
-   - Technical analysis alerts (moving averages, support/resistance)
-   - Volume spike detection
-   - AI-powered alert suggestions
-   - Real-time notifications via multiple channels
+2. **Rust Microservices Architecture** - Event-driven backend services
+   - **API Gateway**: Single entry point with WebSocket support
+   - **Market Data Service**: Simulated market data with Redis Streams
+   - **Copilot Service**: EMA cross detection and suggestion generation
+   - **Notification Service**: Alert management and delivery
+   - **Event Bus**: Redis Streams for inter-service communication
 
-3. **Frontend Components** - React-based user interface
-   - Alert Manager with AI insights
-   - Real-time notification center
-   - Modern, responsive design
-   - TypeScript for type safety
+3. **AI Copilot System** - Intelligent trading suggestions
+   - Real-time market analysis with EMA band crosses
+   - Volume spike detection and technical indicators
+   - Structured suggestions with confidence scoring
+   - Risk impact analysis and guardrail checks
+   - What-if analysis for order simulation
 
-4. **Backend Infrastructure** - Rust-based microservices
-   - Notification service with REST API
-   - Database layer with PostgreSQL
-   - WebSocket support for real-time updates
-   - Comprehensive data models
+4. **React Frontend** - Real-time trading interface
+   - **Dashboard**: Suggestions and positions panels
+   - **Suggestions Component**: Accept/Dismiss copilot recommendations
+   - **Positions Component**: Real-time position updates
+   - **WebSocket Integration**: Live data streaming
+   - **Order Placement**: One-click order execution
 
-### 🔧 Development Environment
+5. **Infrastructure** - Production-ready foundation
+   - **Docker Compose**: PostgreSQL and Redis services
+   - **Database Schema**: Complete trading tables with proper indexing
+   - **Event Contracts**: Versioned JSON schemas for all events
+   - **Fixed-point Money Math**: rust_decimal for precision
+   - **Risk Guardrails**: Comprehensive risk management system
 
-- **C++**: Trading engine with CMake build system
-- **Rust**: Backend services with Axum web framework
-- **React**: Frontend with TypeScript and modern tooling
-- **Python**: AI Copilot with OpenAI integration
-- **PostgreSQL**: Primary database
-- **Redis**: Caching and real-time data
-
-## 🛠️ Quick Start
+## Quick Start
 
 ### Prerequisites
 
 - macOS (recommended) or Linux
-- Homebrew (macOS)
+- Docker and Docker Compose
 - Node.js 18+
 - Rust
 - Python 3.11+
-- PostgreSQL 15+
-- Redis
 
 ### Automated Setup
 
 ```bash
 # Clone the repository
-git clone <repository-url>
+git clone https://github.com/johnjohn2410/Frontier-Trading.git
 cd Frontier-Trading
 
-# Run the automated setup script
-./scripts/setup-dev.sh
+# Start infrastructure and all services
+./scripts/start-dev.sh
 ```
 
-This script will:
-- Install all system dependencies
-- Set up PostgreSQL and Redis
-- Build C++ trading engine
-- Build Rust backend services
-- Install frontend dependencies
-- Set up Python environment for AI Copilot
-- Create development scripts
+This will:
+- Start PostgreSQL and Redis with Docker Compose
+- Build and start all Rust microservices
+- Start the React frontend development server
+- Initialize the AI Copilot service
 
 ### Manual Setup
 
-If you prefer manual setup or are on a different platform:
+If you prefer manual setup:
 
-1. **Install Dependencies**
+1. **Start Infrastructure**
    ```bash
-   # macOS
-   brew install cmake googletest postgresql@15 redis node@18 rust python@3.11
-   
-   # Start services
-   brew services start postgresql@15
-   brew services start redis
+   docker compose up -d
    ```
 
-2. **Set up Database**
-   ```bash
-   createdb frontier_trading
-   ```
-
-3. **Build C++ Engine**
-   ```bash
-   cd cpp
-   export CC=/usr/bin/clang
-   export CXX=/usr/bin/clang++
-   cmake -S . -B build -G "Unix Makefiles" -DCMAKE_OSX_ARCHITECTURES=arm64
-   cmake --build build -j
-   cd ..
-   ```
-
-4. **Build Rust Services**
+2. **Build Rust Services**
    ```bash
    cd rust
    cargo build --release
    cd ..
    ```
 
-5. **Install Frontend Dependencies**
+3. **Install Frontend Dependencies**
    ```bash
    cd frontend
    npm install
    cd ..
    ```
 
-6. **Set up Python Environment**
+4. **Set up Python Environment**
    ```bash
    cd ai
    python3 -m venv venv
@@ -126,7 +100,7 @@ If you prefer manual setup or are on a different platform:
    cd ..
    ```
 
-## 🚀 Running the Platform
+## Running the Platform
 
 ### Start All Services
 
@@ -135,19 +109,44 @@ If you prefer manual setup or are on a different platform:
 ```
 
 This starts:
-- Frontend development server (http://localhost:5173)
-- API service (http://localhost:8000)
-- WebSocket service (ws://localhost:8001)
-- Notification service (http://localhost:8002)
-- AI Copilot (background process)
+- **API Gateway**: http://localhost:8000
+- **Market Data Service**: http://localhost:8001
+- **Notification Service**: http://localhost:8002
+- **Copilot Service**: http://localhost:8004
+- **Frontend**: http://localhost:3000
+- **PostgreSQL**: localhost:5432
+- **Redis**: localhost:6379
+
+### Test the Vertical Slice
+
+```bash
+./scripts/test-vertical-slice.sh
+```
+
+This validates the complete flow:
+- Service health checks
+- Redis Stream validation
+- Order placement testing
+- WebSocket connectivity
+- Database connectivity
 
 ### Stop All Services
 
 ```bash
-./scripts/stop-dev.sh
+# Stop application services
+pkill -f "cargo run"
+pkill -f "npm run dev"
+
+# Stop infrastructure
+docker compose down
 ```
 
-## 🧪 Testing
+## Testing
+
+### Vertical Slice Testing
+```bash
+./scripts/test-vertical-slice.sh
+```
 
 ### C++ Trading Engine
 ```bash
@@ -167,7 +166,7 @@ cd frontend
 npm test
 ```
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 Frontier-Trading/
@@ -176,24 +175,59 @@ Frontier-Trading/
 │   ├── src/               # Source files
 │   ├── tests/             # Unit tests
 │   └── CMakeLists.txt     # Build configuration
-├── rust/                  # Rust Backend Services
-│   ├── api/              # REST API service
-│   ├── notifications/    # Alert & notification service
-│   ├── shared/           # Shared types and utilities
-│   └── Cargo.toml        # Workspace configuration
-├── frontend/             # React Frontend
-│   ├── src/              # Source code
-│   ├── components/       # React components
-│   └── package.json      # Dependencies
-├── ai/                   # AI Copilot
-│   ├── copilot.py        # Main AI service
-│   └── requirements.txt  # Python dependencies
-├── scripts/              # Development scripts
-├── config/               # Configuration files
-└── docs/                 # Documentation
+├── rust/                  # Rust Microservices
+│   ├── api_gateway/       # API Gateway with WebSocket
+│   ├── market_data/       # Market data simulation
+│   ├── copilot/           # AI Copilot service
+│   ├── notifications/     # Alert & notification service
+│   ├── shared/            # Shared types and event bus
+│   └── migrations/        # Database migrations
+├── frontend/              # React Frontend
+│   ├── src/
+│   │   ├── components/    # React components
+│   │   ├── hooks/         # Custom hooks (useStream)
+│   │   ├── pages/         # Page components
+│   │   └── App.tsx        # Main application
+│   └── package.json       # Dependencies
+├── ai/                    # AI Copilot (Python)
+│   ├── copilot.py         # Main AI service
+│   └── requirements.txt   # Python dependencies
+├── schemas/               # Event contracts
+│   └── events/            # JSON schemas for all events
+├── scripts/               # Development scripts
+├── docker-compose.yml     # Infrastructure setup
+└── README.md             # This file
 ```
 
-## 🔧 Configuration
+## Architecture
+
+### Event-Driven Microservices
+
+The platform uses a modern event-driven architecture:
+
+1. **Market Data Service** publishes simulated ticks to Redis Streams
+2. **Copilot Service** consumes ticks, detects EMA crosses, generates suggestions
+3. **API Gateway** handles order placement and WebSocket streaming
+4. **Event Bus** (Redis Streams) enables loose coupling between services
+
+### Data Flow
+
+```
+Market Data → Redis Streams → Copilot → Suggestions → UI
+                                    ↓
+Orders ← API Gateway ← UI ← WebSocket ← Event Bus
+```
+
+### Key Technologies
+
+- **Backend**: Rust with Axum, Tokio, SQLx
+- **Frontend**: React with TypeScript, Tailwind CSS
+- **Database**: PostgreSQL with proper money types (NUMERIC)
+- **Message Bus**: Redis Streams for event-driven communication
+- **Infrastructure**: Docker Compose for development
+- **AI**: Python with OpenAI integration
+
+## Configuration
 
 ### Environment Variables
 
@@ -201,80 +235,88 @@ Create a `.env` file in the root directory:
 
 ```env
 # Database Configuration
-DATABASE_URL=postgres://localhost/frontier_trading
+DATABASE_URL=postgres://frontier:frontier@localhost:5432/frontier
 REDIS_URL=redis://localhost:6379
 
-# Server Configuration
-API_PORT=8000
-WEBSOCKET_PORT=8001
+# Service Ports
+API_GATEWAY_PORT=8000
+MARKET_DATA_PORT=8001
 NOTIFICATION_PORT=8002
+COPILOT_PORT=8004
 
 # AI Configuration
 OPENAI_API_KEY=your-openai-api-key-here
 
-# Market Data APIs
-ALPHA_VANTAGE_API_KEY=your-alpha-vantage-key-here
-BINANCE_API_KEY=your-binance-key-here
-BINANCE_SECRET_KEY=your-binance-secret-here
-
-# Logging
+# Development
 RUST_LOG=info
 LOG_LEVEL=info
-
-# Development
 ENVIRONMENT=development
-DEBUG=true
 ```
 
-## 🎯 Next Steps
+## Monitoring
+
+### Redis Streams
+```bash
+# Monitor suggestions
+redis-cli XREAD COUNT 10 STREAMS suggestions.stream 0
+
+# Monitor orders
+redis-cli XREAD COUNT 10 STREAMS orders.stream 0
+
+# Monitor market data
+redis-cli XREAD COUNT 10 STREAMS ticks.AAPL 0
+```
+
+### Service Health
+```bash
+curl http://localhost:8000/health  # API Gateway
+curl http://localhost:8001/health  # Market Data
+curl http://localhost:8004/health  # Copilot
+```
+
+## Next Steps
 
 ### Immediate Priorities
 
-1. **Complete Backend Services**
-   - Implement authentication and user management
-   - Add market data integration (Yahoo Finance, Alpha Vantage)
-   - Implement WebSocket real-time data streaming
-   - Add order execution and portfolio management
+1. **C++ Engine Integration**
+   - Complete JSON-RPC interface
+   - Connect to API Gateway
+   - Add real order execution
 
-2. **Enhance Frontend**
-   - Create main trading dashboard
-   - Add real-time charts and technical indicators
-   - Implement order entry and management interface
-   - Add portfolio overview and P&L tracking
+2. **Real Market Data**
+   - Implement adapter pattern
+   - Add Polygon/Alpaca/IEX integration
+   - Toggle between sim and live data
 
-3. **AI Copilot Integration**
-   - Connect AI insights to real market data
-   - Implement natural language query processing
-   - Add trading strategy suggestions
-   - Create risk assessment and recommendations
+3. **Authentication & Security**
+   - JWT-based authentication
+   - Per-user portfolio isolation
+   - API rate limiting
 
-4. **Testing & Quality**
-   - Add comprehensive integration tests
-   - Implement end-to-end testing
-   - Add performance monitoring
-   - Set up CI/CD pipeline
+4. **Enhanced Frontend**
+   - Real-time charts with technical indicators
+   - Order management interface
+   - Portfolio analytics dashboard
 
 ### Future Enhancements
 
-- **Advanced Trading Features**
-  - Options and derivatives trading
-  - Algorithmic trading strategies
-  - Backtesting framework
-  - Paper trading competitions
+- **Strategy Backtesting**
+  - Vectorized backtesting engine
+  - Strategy catalog and sharing
+  - Performance analytics
 
-- **AI Capabilities**
+- **Advanced AI Features**
+  - Natural language queries
   - Predictive analytics
-  - Sentiment analysis from social media
-  - Automated portfolio rebalancing
-  - Personalized trading recommendations
+  - Automated portfolio optimization
 
-- **Platform Features**
-  - Mobile app (React Native)
-  - Social trading features
-  - Educational content and tutorials
-  - Community features
+- **Production Features**
+  - Kubernetes deployment
+  - Monitoring and observability
+  - CI/CD pipeline
+  - Security hardening
 
-## 🤝 Contributing
+## Contributing
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/amazing-feature`)
@@ -282,11 +324,11 @@ DEBUG=true
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
-## 📄 License
+## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 🆘 Support
+## Support
 
 For support and questions:
 - Create an issue in the GitHub repository
