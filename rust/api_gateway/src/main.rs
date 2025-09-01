@@ -2,8 +2,8 @@ use axum::{
     routing::{get, post, put, delete},
     http::{StatusCode, Method},
     Json, extract::{State, Path, Query},
-    response::sse::{Event, Sse},
-    response::Response,
+    response::sse::{Event as SseEvent, Sse},
+    response::{Response, IntoResponse},
 };
 use axum_extra::routing::Router;
 use serde::{Deserialize, Serialize};
@@ -11,13 +11,14 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tower_http::cors::{CorsLayer, Any};
 use tracing::{info, error, warn};
+use tracing_subscriber;
 use futures_util::stream::Stream;
 use std::pin::Pin;
 use std::convert::Infallible;
 
 use shared::{
     Event, EventPayload, OrderRequestedEvent, MarketTickEvent, 
-    CopilotSuggestionEvent, RiskCheckResult, RiskMonitor
+    CopilotSuggestionEvent, RiskCheckResult, RiskMonitor, EventBusManager
 };
 
 mod services;
@@ -30,8 +31,11 @@ use services::{
     CopilotService, DatabaseService
 };
 use handlers::{
-    order_handlers, market_handlers, account_handlers, 
-    alert_handlers, copilot_handlers
+    place_order, get_orders, cancel_order,
+    get_quote, get_quotes, get_history,
+    get_account, get_risk_summary, update_risk_limits,
+    get_alerts, create_alert, delete_alert, update_alert, get_insights,
+    analyze_stock, get_suggestions, execute_suggestion
 };
 use config::GatewayConfig;
 
@@ -48,6 +52,7 @@ pub struct GatewayState {
     pub copilot: Arc<CopilotService>,
     pub database: Arc<DatabaseService>,
     pub risk_monitor: Arc<RwLock<RiskMonitor>>,
+    pub event_bus: Arc<EventBusManager>,
 }
 
 // ============================================================================
@@ -70,6 +75,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let copilot = Arc::new(CopilotService::new(&config).await?);
     let database = Arc::new(DatabaseService::new(&config).await?);
     let risk_monitor = Arc::new(RwLock::new(RiskMonitor::new()));
+    let event_bus = Arc::new(EventBusManager::new(&config.redis_url).await?);
     
     // Create shared state
     let state = GatewayState {
@@ -80,6 +86,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         copilot,
         database,
         risk_monitor,
+        event_bus,
     };
     
     // Configure CORS
@@ -94,39 +101,38 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/health", get(health_check))
         
         // Market data routes
-        .route("/api/market/quotes/:symbol", get(market_handlers::get_quote))
-        .route("/api/market/quotes", get(market_handlers::get_quotes))
-        .route("/api/market/history/:symbol", get(market_handlers::get_history))
+        .route("/api/market/quotes/:symbol", get(get_quote))
+        .route("/api/market/quotes", get(get_quotes))
+        .route("/api/market/history/:symbol/:period", get(get_history))
         .route("/api/market/stream", get(market_data_stream))
         
         // Trading routes
-        .route("/api/trading/orders", post(order_handlers::create_order))
-        .route("/api/trading/orders/:order_id", get(order_handlers::get_order))
-        .route("/api/trading/orders/:order_id", delete(order_handlers::cancel_order))
-        .route("/api/trading/orders", get(order_handlers::get_orders))
-        .route("/api/trading/positions", get(order_handlers::get_positions))
-        .route("/api/trading/positions/:symbol", get(order_handlers::get_position))
+        .route("/api/trading/orders", post(place_order))
+        .route("/api/trading/orders/:order_id", delete(cancel_order))
+        .route("/api/trading/orders", get(get_orders))
+        .route("/orders", post(place_order))  // Simple endpoint for frontend
         
         // Account routes
-        .route("/api/account", get(account_handlers::get_account))
-        .route("/api/account/risk", get(account_handlers::get_risk_summary))
-        .route("/api/account/limits", put(account_handlers::update_risk_limits))
+        .route("/api/account", get(get_account))
+        .route("/api/account/risk", get(get_risk_summary))
+        .route("/api/account/limits", put(update_risk_limits))
         
         // Alert routes
-        .route("/api/alerts", get(alert_handlers::get_alerts))
-        .route("/api/alerts", post(alert_handlers::create_alert))
-        .route("/api/alerts/:alert_id", delete(alert_handlers::delete_alert))
-        .route("/api/alerts/:alert_id", put(alert_handlers::update_alert))
-        .route("/api/alerts/insights/:symbol", get(alert_handlers::get_insights))
+        .route("/api/alerts", get(get_alerts))
+        .route("/api/alerts", post(create_alert))
+        .route("/api/alerts/:alert_id", delete(delete_alert))
+        .route("/api/alerts/:alert_id", put(update_alert))
+        .route("/api/alerts/insights/:symbol", get(get_insights))
         
         // Copilot routes
-        .route("/api/copilot/analyze/:symbol", post(copilot_handlers::analyze_stock))
-        .route("/api/copilot/suggestions", get(copilot_handlers::get_suggestions))
-        .route("/api/copilot/suggestions/:suggestion_id", post(copilot_handlers::execute_suggestion))
+        .route("/api/copilot/analyze/:symbol", post(analyze_stock))
+        .route("/api/copilot/suggestions", get(get_suggestions))
+        .route("/api/copilot/suggestions/:suggestion_id", post(execute_suggestion))
         .route("/api/copilot/stream", get(copilot_suggestions_stream))
         
         // WebSocket routes
         .route("/ws", get(websocket_handler))
+        .route("/ws/stream", get(websocket_stream_handler))
         
         // Apply middleware
         .layer(cors)
@@ -172,7 +178,7 @@ async fn market_data_stream(
     let stream = state.market_data.subscribe_quotes(&symbols).await;
     
     Sse::new(stream.map(|event| {
-        Ok(Event::default().json_data(event).unwrap())
+        Ok(SseEvent::default().json_data(event).unwrap())
     }))
 }
 
@@ -303,4 +309,31 @@ pub async fn handle_error(err: anyhow::Error) -> (StatusCode, Json<ErrorResponse
         StatusCode::INTERNAL_SERVER_ERROR,
         Json(ErrorResponse::from(err))
     )
+}
+
+// ============================================================================
+// WEB SOCKET STREAM HANDLER
+// ============================================================================
+
+async fn websocket_stream_handler(
+    Query(params): Query<serde_json::Value>,
+    State(state): State<GatewayState>,
+) -> Response {
+    let stream_name = params.get("s")
+        .and_then(|v| v.as_str())
+        .unwrap_or("suggestions.stream");
+    
+    info!("WebSocket stream request for: {}", stream_name);
+    
+    // For now, return a simple response indicating the stream
+    // In a real implementation, this would set up a WebSocket connection
+    // and stream events from the specified Redis stream
+    
+    let response = serde_json::json!({
+        "stream": stream_name,
+        "status": "connected",
+        "message": "WebSocket stream handler - implement actual streaming"
+    });
+    
+    Json(response).into_response()
 }
