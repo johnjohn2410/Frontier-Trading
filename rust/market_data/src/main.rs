@@ -11,6 +11,16 @@ use tracing::{info, error, warn};
 use chrono::{DateTime, Utc};
 use rand::Rng;
 
+mod alpaca_adapter;
+mod binance_provider;
+mod dexscreener_provider;
+mod provider_registry;
+
+use alpaca_adapter::{AlpacaAdapter, AlpacaConfig};
+use binance_provider::BinanceProvider;
+use dexscreener_provider::DexScreenerProvider;
+use provider_registry::{ProviderRegistry, MarketDataProvider, AssetType};
+
 // ============================================================================
 // MARKET TICK STRUCTURE
 // ============================================================================
@@ -67,46 +77,146 @@ pub struct MarketDataService {
     symbols: Vec<String>,
     base_prices: HashMap<String, f64>,
     price_history: Arc<RwLock<HashMap<String, Vec<f64>>>>,
+    provider_registry: ProviderRegistry,
+    use_providers: bool,
 }
 
 impl MarketDataService {
     pub fn new(redis_url: &str) -> RedisResult<Self> {
-        let client = Client::open(redis_url)?;
+        let redis_client = Arc::new(Client::open(redis_url)?);
         
-        // Initialize with some popular symbols
-        let symbols = vec![
-            "AAPL".to_string(),
-            "SPY".to_string(), 
-            "BTCUSD".to_string(),
-            "GOOGL".to_string(),
-            "TSLA".to_string(),
-            "MSFT".to_string(),
-        ];
+        let mut provider_registry = ProviderRegistry::new();
+        let mut use_providers = false;
+        let mut symbols = Vec::new();
+        
+        // Try to initialize Alpaca adapter for US equities
+        if let Ok(config) = AlpacaConfig::from_env() {
+            info!("Alpaca API configured - using real US equity data");
+            let alpaca_adapter = Box::new(AlpacaAdapter::new(
+                config.api_key,
+                config.secret_key,
+                config.is_paper,
+            ));
+            provider_registry.register_provider(alpaca_adapter);
+            symbols.extend(config.symbols);
+            use_providers = true;
+        }
+        
+        // Always add Binance provider for crypto majors
+        info!("Adding Binance provider for crypto majors");
+        let binance_provider = Box::new(BinanceProvider::new());
+        provider_registry.register_provider(binance_provider);
+        symbols.extend(vec![
+            "BTCUSD.BIN".to_string(),
+            "ETHUSD.BIN".to_string(),
+            "ADAUSD.BIN".to_string(),
+            "DOTUSD.BIN".to_string(),
+        ]);
+        use_providers = true;
+        
+        // Always add DEXScreener provider for meme coins
+        info!("Adding DEXScreener provider for meme coins and DEX tokens");
+        let dexscreener_provider = Box::new(DexScreenerProvider::new());
+        provider_registry.register_provider(dexscreener_provider);
+        symbols.extend(vec![
+            "SOL:So11111111111111111111111111111111111111112".to_string(), // Wrapped SOL
+            "ETH:0xA0b86a33E6441b8c4C8D3F3C1B8C4C8D3F3C1B8C".to_string(), // Example ETH token
+        ]);
+        use_providers = true;
+        
+        // Fallback to simulation if no providers configured
+        if !use_providers {
+            warn!("No providers configured, using simulated data");
+            symbols = vec![
+                "AAPL".to_string(),
+                "SPY".to_string(), 
+                "BTCUSD".to_string(),
+                "GOOGL".to_string(),
+                "TSLA".to_string(),
+                "MSFT".to_string(),
+            ];
+        }
         
         let mut base_prices = HashMap::new();
-        base_prices.insert("AAPL".to_string(), 192.34);
-        base_prices.insert("SPY".to_string(), 485.67);
-        base_prices.insert("BTCUSD".to_string(), 43250.0);
-        base_prices.insert("GOOGL".to_string(), 142.89);
-        base_prices.insert("TSLA".to_string(), 245.12);
-        base_prices.insert("MSFT".to_string(), 378.45);
+        if !use_providers {
+            // Only set base prices for simulation
+            base_prices.insert("AAPL".to_string(), 192.34);
+            base_prices.insert("SPY".to_string(), 485.67);
+            base_prices.insert("BTCUSD".to_string(), 43250.0);
+            base_prices.insert("GOOGL".to_string(), 142.89);
+            base_prices.insert("TSLA".to_string(), 245.12);
+            base_prices.insert("MSFT".to_string(), 378.45);
+        }
         
         Ok(Self {
-            redis_client: Arc::new(client),
+            redis_client,
             symbols,
             base_prices,
             price_history: Arc::new(RwLock::new(HashMap::new())),
+            provider_registry,
+            use_providers,
         })
     }
 
     pub async fn start_simulation(&self) {
-        info!("Starting market data simulation for symbols: {:?}", self.symbols);
-        
+        if self.use_providers {
+            info!("Starting multi-provider market data feed for symbols: {:?}", self.symbols);
+            self.start_provider_feed().await;
+        } else {
+            info!("Starting market data simulation for symbols: {:?}", self.symbols);
+            
+            for symbol in self.symbols.clone() {
+                let service = self.clone();
+                tokio::spawn(async move {
+                    service.simulate_symbol(symbol).await;
+                });
+            }
+        }
+    }
+
+    async fn start_provider_feed(&self) {
         for symbol in self.symbols.clone() {
             let service = self.clone();
+            let symbol_clone = symbol.clone();
             tokio::spawn(async move {
-                service.simulate_symbol(symbol).await;
+                service.feed_provider_data(symbol_clone).await;
             });
+        }
+    }
+
+    async fn feed_provider_data(&self, symbol: String) {
+        loop {
+            match self.provider_registry.get_quote(&symbol).await {
+                Ok(Some(tick)) => {
+                    // Publish to Redis Stream
+                    if let Err(e) = self.publish_tick(&tick).await {
+                        error!("Failed to publish provider tick for {}: {}", symbol, e);
+                    }
+                    
+                    // Update price history
+                    {
+                        let mut history = self.price_history.write().await;
+                        let symbol_history = history.entry(symbol.clone()).or_insert_with(Vec::new);
+                        if let Ok(price) = tick.price.parse::<f64>() {
+                            symbol_history.push(price);
+                            
+                            // Keep only last 1000 prices
+                            if symbol_history.len() > 1000 {
+                                symbol_history.remove(0);
+                            }
+                        }
+                    }
+                }
+                Ok(None) => {
+                    warn!("No quote data received for {}", symbol);
+                }
+                Err(e) => {
+                    error!("Provider API error for {}: {}", symbol, e);
+                }
+            }
+            
+            // Wait before next request (respect rate limits)
+            tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
         }
     }
 

@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use uuid::Uuid;
 use tracing::{info, error, warn};
-use chrono;
+use chrono::{DateTime, Utc};
 
 use crate::GatewayState;
 use shared::types::{Money, Event, EventPayload, OrderRequestedEvent, OrderFilledEvent, PositionUpdatedEvent};
@@ -143,6 +143,48 @@ pub async fn place_order(
                 
                 if let Err(e) = state.event_bus.publish(&position_updated).await {
                     error!("Failed to publish position.updated: {}", e);
+                }
+            }
+        }
+    } else {
+        // Handle JSON-RPC error responses
+        if let Ok(error_json) = serde_json::from_str::<Value>(&engine_response) {
+            if let Some(error) = error_json.get("error") {
+                let error_message = error.get("message").and_then(|m| m.as_str()).unwrap_or("Unknown error");
+                
+                // Map engine errors to appropriate HTTP status codes
+                if error_message.contains("INSUFFICIENT_BUYING_POWER") {
+                    return Json(OrderResponse {
+                        order_id,
+                        status: "rejected".to_string(),
+                        filled_qty: None,
+                        filled_price: None,
+                        correlation_id,
+                    });
+                } else if error_message.contains("RISK_LIMIT") {
+                    return Json(OrderResponse {
+                        order_id,
+                        status: "rejected".to_string(),
+                        filled_qty: None,
+                        filled_price: None,
+                        correlation_id,
+                    });
+                } else if error_message.contains("MARKET_CLOSED") {
+                    return Json(OrderResponse {
+                        order_id,
+                        status: "rejected".to_string(),
+                        filled_qty: None,
+                        filled_price: None,
+                        correlation_id,
+                    });
+                } else if error_message.contains("INVALID_SYMBOL") {
+                    return Json(OrderResponse {
+                        order_id,
+                        status: "rejected".to_string(),
+                        filled_qty: None,
+                        filled_price: None,
+                        correlation_id,
+                    });
                 }
             }
         }

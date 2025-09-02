@@ -23,6 +23,15 @@ find_package(websocketpp REQUIRED)
 find_package(nlohmann_json REQUIRED)
 find_package(spdlog REQUIRED)
 
+# Add httplib (header-only library)
+include(FetchContent)
+FetchContent_Declare(
+    httplib
+    GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
+    GIT_TAG v0.14.1
+)
+FetchContent_MakeAvailable(httplib)
+
 # Include directories
 include_directories(${CMAKE_SOURCE_DIR}/include)
 
@@ -41,7 +50,7 @@ add_executable(frontier_trading
     src/main.cpp
 )
 target_link_libraries(frontier_trading
-    PRIVATE trading_engine spdlog::spdlog
+    PRIVATE trading_engine spdlog::spdlog httplib::httplib
 )
 
 # ---- tests (gtest) ----

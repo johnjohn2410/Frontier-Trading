@@ -86,8 +86,12 @@ nlohmann::json RpcServer::place_market_order(const nlohmann::json& params) {
     
     std::string symbol = params["symbol"];
     std::string side_str = params["side"];
-    double quantity = params["quantity"];
-    double price = params["price"];
+    std::string qty_str = params["qty"];
+    std::string price_str = params.value("price", "0");
+    
+    // Convert strings to doubles for engine (engine uses doubles internally)
+    double quantity = std::stod(qty_str);
+    double price = std::stod(price_str);
     
     Side side = (side_str == "buy") ? Side::Buy : Side::Sell;
     
@@ -95,16 +99,31 @@ nlohmann::json RpcServer::place_market_order(const nlohmann::json& params) {
     bool success = engine_->place_market(symbol, side, quantity, price, &error);
     
     if (!success) {
-        throw std::runtime_error("Order rejected: " + error);
+        // Map engine errors to appropriate HTTP status codes
+        if (error.find("insufficient") != std::string::npos || 
+            error.find("buying power") != std::string::npos) {
+            throw std::runtime_error("INSUFFICIENT_BUYING_POWER: " + error);
+        } else if (error.find("risk") != std::string::npos || 
+                   error.find("limit") != std::string::npos) {
+            throw std::runtime_error("RISK_LIMIT: " + error);
+        } else if (error.find("market closed") != std::string::npos) {
+            throw std::runtime_error("MARKET_CLOSED: " + error);
+        } else if (error.find("invalid symbol") != std::string::npos) {
+            throw std::runtime_error("INVALID_SYMBOL: " + error);
+        } else {
+            throw std::runtime_error("ORDER_REJECTED: " + error);
+        }
     }
     
+    // Return fixed-point strings for precision
     return nlohmann::json{
-        {"success", true},
-        {"message", "Order placed successfully"},
+        {"status", "filled"},
         {"symbol", symbol},
         {"side", side_str},
-        {"quantity", quantity},
-        {"price", price}
+        {"filled_qty", qty_str},
+        {"filled_price", price_str},
+        {"order_id", params.value("id", "")},
+        {"correlation_id", params.value("correlation_id", "")}
     };
 }
 
@@ -275,14 +294,51 @@ std::string RpcServer::serialize_response(const nlohmann::json& response) {
 }
 
 bool RpcServer::validate_order_params(const nlohmann::json& params) {
-    return params.contains("symbol") && 
-           params.contains("side") && 
-           params.contains("quantity") && 
-           params.contains("price") &&
-           params["quantity"].is_number() &&
-           params["price"].is_number() &&
-           params["quantity"] > 0 &&
-           params["price"] > 0;
+    if (!params.contains("symbol") || !params.contains("side") || !params.contains("qty")) {
+        return false;
+    }
+    
+    // Validate symbol
+    if (!params["symbol"].is_string() || params["symbol"].get<std::string>().empty()) {
+        return false;
+    }
+    
+    // Validate side
+    std::string side = params["side"].get<std::string>();
+    if (side != "buy" && side != "sell") {
+        return false;
+    }
+    
+    // Validate quantity (must be string for fixed-point precision)
+    if (!params["qty"].is_string()) {
+        return false;
+    }
+    
+    try {
+        double qty = std::stod(params["qty"].get<std::string>());
+        if (qty <= 0) {
+            return false;
+        }
+    } catch (const std::exception&) {
+        return false;
+    }
+    
+    // Price is optional for market orders
+    if (params.contains("price")) {
+        if (!params["price"].is_string()) {
+            return false;
+        }
+        try {
+            double price = std::stod(params["price"].get<std::string>());
+            if (price < 0) {
+                return false;
+            }
+        } catch (const std::exception&) {
+            return false;
+        }
+    }
+    
+    return true;
 }
 
 bool RpcServer::validate_market_data(const nlohmann::json& params) {

@@ -247,11 +247,69 @@ COPILOT_PORT=8004
 # AI Configuration
 OPENAI_API_KEY=your-openai-api-key-here
 
+# Alpaca API Configuration (Optional - for real market data)
+ALPACA_API_KEY=your-alpaca-api-key-here
+ALPACA_SECRET_KEY=your-alpaca-secret-key-here
+ALPACA_PAPER_TRADING=true
+ALPACA_SYMBOLS=AAPL,GOOGL,MSFT,TSLA,SPY,QQQ
+ALPACA_UPDATE_INTERVAL_MS=1000
+
 # Development
 RUST_LOG=info
 LOG_LEVEL=info
 ENVIRONMENT=development
 ```
+
+### Multi-Provider Market Data Setup
+
+The platform uses a smart multi-provider system for comprehensive market coverage:
+
+#### **Provider Stack (Free Tier)**
+
+1. **US Equities (Real-time)**: Alpaca Market Data Basic
+   - 30 symbols, ~200 REST calls/min
+   - Real-time via IEX (15-min delay for major exchanges)
+   - Configure with API keys (optional)
+
+2. **Crypto Majors (Real-time)**: Binance Spot WebSocket
+   - BTC, ETH, ADA, DOT, etc.
+   - 1200 requests/min, public & free
+   - No API key required
+
+3. **Meme Coins & Long-tail**: DEXScreener + Birdeye
+   - DEXScreener: 300 req/min, no API key
+   - Birdeye: 30,000 CUs/month, 1 RPS
+   - Chain:contract format (e.g., `SOL:So111...`)
+
+#### **Configuration**
+
+```bash
+# Optional: Alpaca for US equities
+ALPACA_API_KEY=your-api-key-here
+ALPACA_SECRET_KEY=your-secret-key-here
+ALPACA_PAPER_TRADING=true
+ALPACA_SYMBOLS=AAPL,GOOGL,MSFT,TSLA,SPY
+
+# Binance and DEXScreener are always enabled (free)
+```
+
+#### **Symbol Formats**
+
+- **US Equities**: `AAPL`, `GOOGL`, `MSFT`
+- **Crypto Majors**: `BTCUSD.BIN`, `ETHUSD.BIN`, `ADAUSD.BIN`
+- **Meme Coins**: `SOL:So11111111111111111111111111111111111111112`
+
+#### **Testing**
+
+```bash
+# Test multi-provider system
+./scripts/test-multi-provider.sh
+
+# Test individual providers
+./scripts/test-alpaca-integration.sh
+```
+
+The platform automatically routes symbols to the best provider and falls back to simulation if needed.
 
 ## Monitoring
 

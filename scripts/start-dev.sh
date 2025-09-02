@@ -94,6 +94,26 @@ build_rust_services() {
     cd ..
 }
 
+# Build C++ trading engine
+build_cpp_engine() {
+    print_status "Building C++ trading engine..."
+    
+    cd cpp
+    
+    # Create build directory
+    mkdir -p build
+    cd build
+    
+    # Configure with CMake
+    cmake .. -DCMAKE_BUILD_TYPE=Release
+    
+    # Build
+    make -j$(nproc)
+    
+    print_success "C++ engine built successfully"
+    cd ../..
+}
+
 # Install frontend dependencies
 install_frontend_deps() {
     print_status "Installing frontend dependencies..."
@@ -139,6 +159,13 @@ start_services() {
     NOTIFICATION_PID=$!
     cd ../..
     
+    # Start C++ trading engine
+    print_status "Starting C++ trading engine on port 8003..."
+    cd cpp/build
+    ./frontier_trading &
+    CPP_ENGINE_PID=$!
+    cd ../..
+    
     # Start frontend development server
     print_status "Starting frontend development server..."
     cd frontend
@@ -151,6 +178,7 @@ start_services() {
     echo $COPILOT_PID >> .dev-pids
     echo $GATEWAY_PID >> .dev-pids
     echo $NOTIFICATION_PID >> .dev-pids
+    echo $CPP_ENGINE_PID >> .dev-pids
     echo $FRONTEND_PID >> .dev-pids
     
     print_success "All services started"
@@ -158,6 +186,7 @@ start_services() {
     echo "  - API Gateway: http://localhost:8000"
     echo "  - Market Data: http://localhost:8001"
     echo "  - Notifications: http://localhost:8002"
+    echo "  - C++ Engine: http://localhost:8003"
     echo "  - Copilot: http://localhost:8004"
     echo "  - Frontend: http://localhost:3000"
     echo "  - PostgreSQL: localhost:5432"
@@ -211,6 +240,7 @@ main() {
     
     # Build components
     build_rust_services
+    build_cpp_engine
     install_frontend_deps
     
     # Start services

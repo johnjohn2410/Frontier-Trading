@@ -98,6 +98,23 @@ impl TradingEngineService {
         response.json().await.map_err(|e| anyhow::anyhow!("Failed to parse order response: {}", e))
     }
 
+    pub async fn place_order(&self, rpc_request: &serde_json::Value) -> Result<String> {
+        let response = self.client
+            .post(&format!("{}/jsonrpc", self.base_url))
+            .json(rpc_request)
+            .timeout(std::time::Duration::from_secs(5))
+            .send()
+            .await?;
+        
+        if !response.status().is_success() {
+            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(anyhow::anyhow!("Engine RPC failed with status {}: {}", response.status(), error_text));
+        }
+        
+        let response_text = response.text().await?;
+        Ok(response_text)
+    }
+
     pub async fn get_order(&self, order_id: &str) -> Result<Event> {
         let response = self.client
             .get(&format!("{}/api/orders/{}", self.base_url, order_id))
