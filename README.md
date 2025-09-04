@@ -4,7 +4,7 @@ A modern, multi-asset trading platform built with C++, Rust, and React, featurin
 
 ## Current Status
 
-### Latest UI Update: Professional Neon Trading Terminal
+### Latest UI Update: Professional Trading Terminal
 
 The frontend has been completely redesigned with a professional trading terminal aesthetic:
 
@@ -39,7 +39,7 @@ The frontend has been completely redesigned with a professional trading terminal
    - Risk impact analysis and guardrail checks
    - What-if analysis for order simulation
 
-4. **React Frontend** - Professional neon trading terminal
+4. **React Frontend** - Professional trading terminal
    - **Trading Dashboard**: Professional trading interface with neon effects
    - **Dynamic Stock Selection**: Search and switch between different stocks
    - **Market Depth Chart**: Real-time order book visualization with heat mapping
