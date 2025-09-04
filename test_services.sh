@@ -42,8 +42,8 @@ echo ""
 
 # Test Alpaca API Direct
 echo "🔗 Testing Alpaca API Direct..."
-curl -s -H "APCA-API-KEY-ID: PK1PRMISMTPXD9CG7POG" \
-  -H "APCA-API-SECRET-KEY: 6sEqmHbDogzRCv1ZVeCgIzLKsVEuCJm5CJVy951B" \
+curl -s -H "APCA-API-KEY-ID: ${APCA_API_KEY_ID}" \
+  -H "APCA-API-SECRET-KEY: ${APCA_API_SECRET_KEY}" \
   "https://data.alpaca.markets/v2/stocks/bars/latest?symbols=AAPL" | jq '.bars.AAPL.c' || echo "❌ Alpaca API failed"
 
 echo ""
