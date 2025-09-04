@@ -42,9 +42,14 @@ echo ""
 
 # Test Alpaca API Direct
 echo "🔗 Testing Alpaca API Direct..."
-curl -s -H "APCA-API-KEY-ID: ${APCA_API_KEY_ID}" \
-  -H "APCA-API-SECRET-KEY: ${APCA_API_SECRET_KEY}" \
-  "https://data.alpaca.markets/v2/stocks/bars/latest?symbols=AAPL" | jq '.bars.AAPL.c' || echo "❌ Alpaca API failed"
+if [ -z "$APCA_API_KEY_ID" ] || [ -z "$APCA_API_SECRET_KEY" ]; then
+  echo "⚠️  Alpaca API keys not set in environment variables"
+  echo "   Set APCA_API_KEY_ID and APCA_API_SECRET_KEY to test Alpaca API"
+else
+  curl -s -H "APCA-API-KEY-ID: ${APCA_API_KEY_ID}" \
+    -H "APCA-API-SECRET-KEY: ${APCA_API_SECRET_KEY}" \
+    "https://data.alpaca.markets/v2/stocks/bars/latest?symbols=AAPL" | jq '.bars.AAPL.c' || echo "❌ Alpaca API failed"
+fi
 
 echo ""
 
