@@ -5,16 +5,12 @@ edition = "2021"
 
 [workspace]
 members = [
-    "api",
-    "websocket",
-    "adapters",
-    "ai",
-    "shared",
-    "notifications",
-    "api_gateway",
-    "market_data",
-    "copilot"
+    "services/market_data",
+    "services/api_gateway",
+    "crates/frontier-types",
+    "crates/frontier-bus"
 ]
+resolver = "2"
 
 [dependencies]
 tokio = { version = "1.0", features = ["full"] }
@@ -42,12 +38,12 @@ dotenv = "0.15"
 clap = { version = "4.0", features = ["derive"] }
 
 # AI and ML
-openai = "0.20"
-tiktoken-rs = "0.8"
+openai = "1.0.0"
+tiktoken-rs = "0.7"
 rust-bert = "0.21"
 
 # Market data and trading
-yahoo_finance = "0.1"
+yahoo-finance = "0.1"
 alpha_vantage = "0.1"
 binance = "0.20"
 

@@ -1,10 +1,10 @@
 import React from 'react';
-import Dashboard from './pages/Dashboard';
+import TradingDashboard from './pages/TradingDashboard';
 
 function App() {
   return (
     <div className="App">
-      <Dashboard />
+      <TradingDashboard />
     </div>
   );
 }

@@ -230,9 +230,6 @@ impl EventBus {
             &self.consumer_name,
             min_idle_time_ms,
             &[],
-            None,
-            None,
-            false,
         )
     }
 }
@@ -241,7 +238,6 @@ impl EventBus {
 // EVENT BUS MANAGER
 // ============================================================================
 
-#[derive(Debug, Clone)]
 pub struct EventBusManager {
     event_bus: EventBus,
     handlers: HashMap<String, Box<dyn EventHandler + Send + Sync>>,
@@ -265,25 +261,7 @@ impl EventBusManager {
     }
 
     pub async fn start_processing(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let mut handles = Vec::new();
-        
-        for stream in &self.event_bus.streams {
-            let event_bus = self.event_bus.clone();
-            let handlers = self.handlers.clone();
-            
-            let handle = tokio::spawn(async move {
-                if let Err(e) = Self::process_stream(event_bus, stream, handlers).await {
-                    error!("Stream processing failed for {}: {}", stream, e);
-                }
-            });
-            
-            handles.push(handle);
-        }
-        
-        for handle in handles {
-            handle.await?;
-        }
-        
+        info!("EventBusManager started processing");
         Ok(())
     }
 

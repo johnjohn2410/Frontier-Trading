@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use rust_decimal::Decimal;
+use rust_decimal::prelude::ToPrimitive;
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
@@ -460,7 +461,7 @@ impl std::str::FromStr for Money {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let parts: Vec<&str> = s.split_whitespace().collect();
         if parts.len() != 2 {
-            return Err(rust_decimal::Error::InvalidDecimal);
+            return Err("Invalid money format".parse::<Decimal>().unwrap_err());
         }
         let amount = parts[0].parse::<Decimal>()?;
         let currency = parts[1].to_string();

@@ -15,9 +15,10 @@ A modern, multi-asset trading platform built with C++, Rust, and React, featurin
 
 2. **Rust Microservices Architecture** - Event-driven backend services
    - **API Gateway**: Single entry point with WebSocket support
-   - **Market Data Service**: Simulated market data with Redis Streams
+   - **Market Data Service**: Multi-provider market data with Redis Streams
    - **Copilot Service**: EMA cross detection and suggestion generation
    - **Notification Service**: Alert management and delivery
+   - **Market Events Service**: Real-time event monitoring and alert system
    - **Event Bus**: Redis Streams for inter-service communication
 
 3. **AI Copilot System** - Intelligent trading suggestions
@@ -34,7 +35,15 @@ A modern, multi-asset trading platform built with C++, Rust, and React, featurin
    - **WebSocket Integration**: Live data streaming
    - **Order Placement**: One-click order execution
 
-5. **Infrastructure** - Production-ready foundation
+5. **Market Events Alert System** - Real-time event monitoring
+   - **Event Ingestion**: SEC EDGAR, news feeds, halt monitoring
+   - **Entity Linking**: Automatic ticker and CIK code extraction
+   - **Severity Scoring**: Multi-factor severity assessment (A/B/C levels)
+   - **Alert Posting**: Multi-platform alerts (Twitter, Discord, Slack, Webhooks)
+   - **Compliance**: Two-source rule, correction protocols, audit logging
+   - **Performance**: Sub-60s detection latency, 98%+ precision target
+
+6. **Infrastructure** - Production-ready foundation
    - **Docker Compose**: PostgreSQL and Redis services
    - **Database Schema**: Complete trading tables with proper indexing
    - **Event Contracts**: Versioned JSON schemas for all events
@@ -113,6 +122,7 @@ This starts:
 - **Market Data Service**: http://localhost:8001
 - **Notification Service**: http://localhost:8002
 - **Copilot Service**: http://localhost:8004
+- **Market Events Service**: http://localhost:8005
 - **Frontend**: http://localhost:3000
 - **PostgreSQL**: localhost:5432
 - **Redis**: localhost:6379
@@ -243,6 +253,7 @@ API_GATEWAY_PORT=8000
 MARKET_DATA_PORT=8001
 NOTIFICATION_PORT=8002
 COPILOT_PORT=8004
+MARKET_EVENTS_PORT=8005
 
 # AI Configuration
 OPENAI_API_KEY=your-openai-api-key-here
@@ -259,6 +270,52 @@ RUST_LOG=info
 LOG_LEVEL=info
 ENVIRONMENT=development
 ```
+
+## Market Events Alert System
+
+The Market Events system provides real-time monitoring and alerting for material market events, designed for active traders, analysts, and risk teams.
+
+### Event Categories
+
+- **Critical Incidents**: Accidents, safety events, production outages, data breaches
+- **Regulatory Filings**: SEC 8-K, material 6-Ks, guidance changes
+- **Trading Status**: Halts/resumptions, material short-sale restrictions
+- **Earnings Surprises**: Material beats/misses, guidance revisions
+- **Legal & Regulatory**: Major lawsuits, FTC/DoJ/EU actions, consent decrees
+- **Product Recalls**: Recalls, FDA actions, withdrawals
+- **Leadership Changes**: CEO/CFO departures/appointments
+- **Crypto Incidents**: Large protocol exploits, exchange incidents, stablecoin depegs
+
+### Severity Levels
+
+- **Level A**: Loss of life/catastrophic accident, regulatory shutdown, massive breach (>10M records)
+- **Level B**: Major recall, guidance withdrawal, CEO resignation, significant litigation/penalty
+- **Level C**: Plant outage, product delay, localized incident, exec reshuffle
+
+### Alert Format
+
+```
+$TICKER — [CATEGORY]: Headline (Location if relevant) [Developing/Confirmed]
+• Source: <link1> (+ <link2> if needed)
+• Early move (5–15m): −1.8% vs S&P −0.2%
+• Potential impact: operations/liability/risk monitoring
+Not investment advice. Time: 14:32 ET
+```
+
+### Compliance & Safety
+
+- **Two-Source Rule**: Sensitive incidents require multiple sources unless official
+- **Correction Protocol**: 10-minute SLA for corrections
+- **Audit Logging**: Complete decision trail for all events
+- **Rate Limiting**: Controlled posting cadence to prevent spam
+- **Manual Override**: Emergency stop for sensitive events
+
+### Performance Targets
+
+- **Detection Latency**: <60s median, <180s p95
+- **Precision**: ≥98% alerts not corrected
+- **Recall Coverage**: ≥95% of severe incidents captured
+- **Thread Discipline**: ≤1 alert per incident + ≤5 updates until resolution
 
 ### Multi-Provider Market Data Setup
 

@@ -1,6 +1,6 @@
 import React from "react";
 import Suggestions from "../components/Suggestions";
-import Positions from "../components/Positions";
+import MarketData from "../components/MarketData";
 
 export default function Dashboard() {
   return (
@@ -13,10 +13,10 @@ export default function Dashboard() {
         
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <section className="lg:col-span-2">
-            <Suggestions />
+            <MarketData />
           </section>
           <section>
-            <Positions />
+            <Suggestions />
           </section>
         </div>
         

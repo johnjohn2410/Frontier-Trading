@@ -1,6 +1,6 @@
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
-use chrono::{DateTime, Utc, TimeZone, Local};
+use chrono::{DateTime, Utc, Local, Datelike};
 use std::collections::HashMap;
 use tracing::{info, warn, error};
 
@@ -120,7 +120,7 @@ impl RiskManager {
 
     pub fn set_risk_limits(&mut self, limits: RiskLimits) {
         self.limits.insert(limits.user_id.clone(), limits);
-        info!("Set risk limits for user {}", limits.user_id);
+        info!("Set risk limits for user {}", limits.user_id.clone());
     }
 
     pub fn get_risk_limits(&self, user_id: &str) -> Option<&RiskLimits> {
@@ -138,8 +138,8 @@ impl RiskManager {
     pub async fn check_order_risk(&self, order: &OrderRequestedEvent, 
                                 account_state: &AccountState) -> RiskCheckResult {
         let mut violations = Vec::new();
-        let mut warnings = Vec::new();
-        let mut risk_score = 0.0;
+        let warnings = Vec::new();
+        let _risk_score = 0.0;
 
         // Get user's risk limits
         let limits = match self.limits.get(&order.user_id) {
@@ -293,7 +293,7 @@ impl RiskManager {
     pub async fn check_position_risk(&self, position: &PositionUpdatedEvent,
                                    account_state: &AccountState) -> RiskCheckResult {
         let mut violations = Vec::new();
-        let mut warnings = Vec::new();
+        let warnings = Vec::new();
 
         let limits = match self.limits.get(&position.user_id) {
             Some(limits) => limits,
@@ -384,7 +384,7 @@ impl RiskManager {
             score += 0.2; // Approaching PDT limit
         }
 
-        score.min(1.0)
+        score.min(1.0_f32)
     }
 
     pub fn get_violations(&self, user_id: &str) -> Vec<&RiskViolation> {
@@ -556,7 +556,7 @@ impl RiskMonitor {
         self.risk_manager.check_order_risk(&order, &account_state).await
     }
 
-    pub fn update_circuit_breaker(&mut self, symbol: String, current_price: Money) {
+    pub fn update_circuit_breaker(&mut self, symbol: String, _current_price: Money) {
         // Check if circuit breaker should be triggered
         if let Some(existing) = self.circuit_breakers.get(&symbol) {
             if existing.is_expired() {

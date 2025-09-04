@@ -1,0 +1,22 @@
+[package]
+name = "api_gateway"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+frontier-types = { path = "../../crates/frontier-types" }
+frontier-bus = { path = "../../crates/frontier-bus" }
+tokio = { version = "1.38", features = ["rt-multi-thread","macros","time"] }
+axum = "0.7"
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+anyhow = "1.0"
+uuid = { version = "1.0", features = ["v4"] }
+chrono = { version = "0.4.38", features = ["serde"] }
+config = "0.14"
+dotenv = "0.15"
+redis = { version = "0.24", features = ["tokio-comp"] }

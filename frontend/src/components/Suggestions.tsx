@@ -68,60 +68,55 @@ export default function Suggestions() {
   };
 
   return (
-    <div className="space-y-3">
-      <h2 className="text-xl font-bold mb-4">Copilot Suggestions</h2>
+    <div className="rounded-xl2 bg-hl-panel/60 border border-slate-800 p-4">
+      <h3 className="text-sm font-semibold text-hl-text mb-3">AI Copilot</h3>
       
       {items.length === 0 && (
-        <div className="text-gray-500 text-center py-8">
-          Waiting for suggestions... Make sure the Copilot service is running.
+        <div className="text-hl-muted text-center py-6 text-xs">
+          Waiting for suggestions...
         </div>
       )}
       
-      {items.map((s, i) => {
-        const payload = s.payload || s;
-        const features = payload.features || s.features;
-        
-        return (
-          <div key={i} className="rounded-xl border p-3 bg-white shadow-sm">
-            <div className="flex justify-between items-start">
-              <div className="font-semibold text-lg">{payload.symbol}</div>
-              <div className="text-sm opacity-70">
-                conf {Math.round(payload.confidence * 100)}%
+      <div className="space-y-2">
+        {items.slice(0, 3).map((s, i) => {
+          const payload = s.payload || s;
+          const features = payload.features || s.features;
+          
+          return (
+            <div key={i} className="border border-slate-800 rounded-lg p-3 hover:bg-slate-800/20 transition-colors">
+              <div className="flex justify-between items-start mb-2">
+                <div className="font-semibold text-hl-text text-sm">{payload.symbol}</div>
+                <div className="text-xs text-hl-muted">
+                  {Math.round(payload.confidence * 100)}%
+                </div>
+              </div>
+              
+              <p className="text-xs text-hl-muted mb-2">{payload.suggestion}</p>
+              
+              {features && (
+                <div className="text-xs text-hl-muted mb-2">
+                  {Object.entries(features).map(([k, v]) => `${k}:${v}`).join(" • ")}
+                </div>
+              )}
+              
+              <div className="flex gap-1">
+                <button 
+                  className="px-2 py-1 text-xs bg-hl-buy/20 text-hl-buy border border-hl-buy/40 rounded hover:bg-hl-buy/30 transition-colors"
+                  onClick={() => accept(s)}
+                >
+                  Accept
+                </button>
+                <button 
+                  className="px-2 py-1 text-xs bg-slate-800/50 text-hl-muted border border-slate-700 rounded hover:bg-slate-700/50 transition-colors"
+                  onClick={() => dismiss(s)}
+                >
+                  Dismiss
+                </button>
               </div>
             </div>
-            
-            <p className="mt-2 text-gray-700">{payload.suggestion}</p>
-            
-            {features && (
-              <div className="mt-2 text-xs text-gray-600">
-                Why: {Object.entries(features).map(([k, v]) => `${k}:${v}`).join(" • ")}
-              </div>
-            )}
-            
-            {payload.what_if && (
-              <div className="mt-2 text-xs text-gray-600">
-                What if: {payload.what_if.qty} shares @ ${payload.what_if.limit} 
-                (${payload.what_if.delta_bp} impact)
-              </div>
-            )}
-            
-            <div className="mt-3 flex gap-2">
-              <button 
-                className="px-3 py-2 rounded bg-black text-white hover:bg-gray-800 transition-colors"
-                onClick={() => accept(s)}
-              >
-                Accept
-              </button>
-              <button 
-                className="px-3 py-2 rounded border hover:bg-gray-50 transition-colors"
-                onClick={() => dismiss(s)}
-              >
-                Dismiss
-              </button>
-            </div>
-          </div>
-        );
-      })}
+          );
+        })}
+      </div>
     </div>
   );
 }

@@ -12,11 +12,13 @@ use chrono::{DateTime, Utc};
 use rand::Rng;
 
 mod alpaca_adapter;
+mod alpaca_client;
 mod binance_provider;
 mod dexscreener_provider;
 mod provider_registry;
 
 use alpaca_adapter::{AlpacaAdapter, AlpacaConfig};
+use alpaca_client::{AlpacaClient, AlpacaConfig as ClientConfig};
 use binance_provider::BinanceProvider;
 use dexscreener_provider::DexScreenerProvider;
 use provider_registry::{ProviderRegistry, MarketDataProvider, AssetType};
@@ -78,6 +80,7 @@ pub struct MarketDataService {
     base_prices: HashMap<String, f64>,
     price_history: Arc<RwLock<HashMap<String, Vec<f64>>>>,
     provider_registry: ProviderRegistry,
+    alpaca_client: Option<AlpacaClient>,
     use_providers: bool,
 }
 
@@ -88,18 +91,36 @@ impl MarketDataService {
         let mut provider_registry = ProviderRegistry::new();
         let mut use_providers = false;
         let mut symbols = Vec::new();
+        let mut alpaca_client = None;
         
         // Try to initialize Alpaca adapter for US equities
         if let Ok(config) = AlpacaConfig::from_env() {
             info!("Alpaca API configured - using real US equity data");
             let alpaca_adapter = Box::new(AlpacaAdapter::new(
-                config.api_key,
-                config.secret_key,
+                config.api_key.clone(),
+                config.secret_key.clone(),
                 config.is_paper,
             ));
             provider_registry.register_provider(alpaca_adapter);
-            symbols.extend(config.symbols);
+            symbols.extend(config.symbols.clone());
             use_providers = true;
+            
+            // Initialize Alpaca client for real-time streaming
+            let client_config = ClientConfig {
+                api_key: config.api_key,
+                secret_key: config.secret_key,
+                rest_url: "https://data.alpaca.markets/v2".to_string(),
+                ws_url: "wss://stream.data.alpaca.markets/v2/iex".to_string(),
+                test_ws_url: "wss://stream.data.alpaca.markets/v2/test".to_string(),
+                watchlist: config.symbols,
+                max_symbols: 30,
+                rate_limit_per_minute: 200,
+                rate_limit_per_second: 3,
+                data_feed: "iex".to_string(),
+                paper_trading: config.is_paper,
+            };
+            
+            alpaca_client = Some(AlpacaClient::new(client_config));
         }
         
         // Always add Binance provider for crypto majors
@@ -154,6 +175,7 @@ impl MarketDataService {
             base_prices,
             price_history: Arc::new(RwLock::new(HashMap::new())),
             provider_registry,
+            alpaca_client,
             use_providers,
         })
     }
@@ -161,6 +183,27 @@ impl MarketDataService {
     pub async fn start_simulation(&self) {
         if self.use_providers {
             info!("Starting multi-provider market data feed for symbols: {:?}", self.symbols);
+            
+            // Start Alpaca WebSocket stream if available
+            if let Some(alpaca_client) = &self.alpaca_client {
+                let redis_client = self.redis_client.clone();
+                let alpaca_client = alpaca_client.clone();
+                
+                tokio::spawn(async move {
+                    if let Err(e) = alpaca_client.start_websocket_stream(|symbol, price, timestamp| {
+                        let redis_client = redis_client.clone();
+                        tokio::spawn(async move {
+                            let tick = MarketTick::new(symbol, price, "alpaca:iex");
+                            if let Err(e) = Self::publish_tick_to_redis(&redis_client, &tick).await {
+                                error!("Failed to publish Alpaca tick: {}", e);
+                            }
+                        });
+                    }).await {
+                        error!("Alpaca WebSocket stream failed: {}", e);
+                    }
+                });
+            }
+            
             self.start_provider_feed().await;
         } else {
             info!("Starting market data simulation for symbols: {:?}", self.symbols);
