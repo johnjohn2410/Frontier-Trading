@@ -4,9 +4,9 @@ A modern, multi-asset trading platform built with C++, Rust, and React, featurin
 
 ## Current Status
 
-### 🎨 Latest UI Update: Hyperliquid-Style Neon Trading Terminal
+### Latest UI Update: Professional Neon Trading Terminal
 
-The frontend has been completely redesigned with a professional trading terminal aesthetic inspired by Hyperliquid:
+The frontend has been completely redesigned with a professional trading terminal aesthetic:
 
 - **Neon Effects**: Glowing buttons, cards, and text with customizable intensity
 - **Dynamic Stock Selection**: Search functionality with popular symbol quick-select
@@ -39,7 +39,7 @@ The frontend has been completely redesigned with a professional trading terminal
    - Risk impact analysis and guardrail checks
    - What-if analysis for order simulation
 
-4. **React Frontend** - Hyperliquid-style neon trading terminal
+4. **React Frontend** - Professional neon trading terminal
    - **Trading Dashboard**: Professional trading interface with neon effects
    - **Dynamic Stock Selection**: Search and switch between different stocks
    - **Market Depth Chart**: Real-time order book visualization with heat mapping
@@ -49,7 +49,7 @@ The frontend has been completely redesigned with a professional trading terminal
    - **Watchlist**: Symbol management and quick selection
    - **Chart Area**: Price display with flash-on-change animations
    - **WebSocket Integration**: Live data streaming
-   - **Neon Theme**: Hyperliquid-inspired glowing UI effects
+   - **Neon Theme**: Professional glowing UI effects
 
 5. **Market Events Alert System** - Real-time event monitoring
    - **Event Ingestion**: SEC EDGAR, news feeds, halt monitoring
