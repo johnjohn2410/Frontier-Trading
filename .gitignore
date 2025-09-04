@@ -11,12 +11,25 @@ rust/target/
 frontend/dist/
 frontend/.vite/
 
-# Environment variables
+# Environment variables and config files
 .env
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
+.env.*
+config.json
+config.yaml
+config.yml
+secrets.json
+secrets.yaml
+secrets.yml
+credentials.json
+credentials.yaml
+credentials.yml
+api-keys.json
+api-keys.yaml
+api-keys.yml
 
 # IDE files
 .vscode/
@@ -164,11 +177,50 @@ docs/_build/
 .local/
 local/
 
-# API keys and secrets (backup)
+# API keys and secrets
 *.key
 *.pem
 *.p12
 *.pfx
+*.secret
+*.token
+*api*key*
+*secret*key*
+*access*token*
+*refresh*token*
+*private*key*
+*client*secret*
+*oauth*token*
+*alpaca*key*
+*alpaca*secret*
+*binance*key*
+*binance*secret*
+*coinbase*key*
+*coinbase*secret*
+*aws*access*key*
+*aws*secret*key*
+*google*api*key*
+*firebase*key*
+*stripe*key*
+*stripe*secret*
+*github*token*
+*gitlab*token*
+*bitbucket*token*
+*slack*token*
+*discord*token*
+*telegram*token*
+*webhook*secret*
+*encryption*key*
+*decryption*key*
+*passphrase*
+*password*
+*credentials*
+*config*secret*
+*env*secret*
+*prod*key*
+*dev*key*
+*test*key*
+*staging*key*
 
 # Docker
 .dockerignore
